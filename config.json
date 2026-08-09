@@ -6,6 +6,7 @@
   "queue_file": "data/queue.json",
   "event_memory_hours": 48,
   "major_event_memory_hours": 168,
+  "story_memory_hours": 48,
   "breaking_min_score": 75,
   "english_only": true,
   "translate_non_english": true,

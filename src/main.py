@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.intelligence import classify, verify
-from src.event_memory import init_events, decide, mark_queued
+from src.event_memory import init_events, decide, mark_queued, purge_expired
 from src.formatter import format_story
 from src.language import check_item
 from src.translator import translate_to_english, TranslationError
@@ -42,6 +42,55 @@ def sid(u, t):
             + t.lower()
         ).encode()
     ).hexdigest()
+
+
+def _is_newer_update(
+    incoming_effective,
+    stored_first_seen
+):
+    """
+    Whether the incoming article carries a newer
+    published/updated timestamp than the stored record.
+
+    A fresher timestamp means the same URL/title may
+    now contain a genuine update, so it should be
+    re-examined by event memory instead of being
+    skipped as already seen.
+    """
+    if not incoming_effective:
+        return False
+
+    try:
+        incoming = datetime.fromisoformat(
+            incoming_effective.replace(
+                "Z",
+                "+00:00"
+            )
+        )
+
+        stored = datetime.fromisoformat(
+            stored_first_seen.replace(
+                "Z",
+                "+00:00"
+            )
+        )
+
+        if incoming.tzinfo is None:
+            incoming = incoming.replace(
+                tzinfo=timezone.utc
+            )
+
+        if stored.tzinfo is None:
+            stored = stored.replace(
+                tzinfo=timezone.utc
+            )
+
+        return (
+            incoming > stored
+        )
+
+    except Exception:
+        return False
 
 
 def db():
@@ -176,6 +225,35 @@ def translate_candidate(x):
 def main():
     c = db()
 
+    # ---------------------------------------------------------
+    # Automatic memory cleanup.
+    #
+    # Runs on every collection cycle and removes only
+    # records whose retention period has elapsed.
+    # ---------------------------------------------------------
+
+    purged = purge_expired(
+        c,
+        story_memory_hours=CONFIG.get(
+            "story_memory_hours",
+            48
+        ),
+        memory_hours=CONFIG[
+            "event_memory_hours"
+        ],
+        major_memory_hours=CONFIG[
+            "major_event_memory_hours"
+        ]
+    )
+
+    print(
+        "MEMORY CLEANUP:",
+        json.dumps(
+            purged,
+            ensure_ascii=False
+        )
+    )
+
     now = datetime.now(
         timezone.utc
     ).isoformat()
@@ -199,6 +277,7 @@ def main():
     run_stats = {
         "fetched": len(items),
         "already_seen": 0,
+        "update_candidates": 0,
         "new_candidates": 0,
         "duplicates": 0,
         "below_score": 0,
@@ -218,18 +297,39 @@ def main():
 
         # -----------------------------------------------------
         # Skip stories already stored in database.
+        #
+        # EXCEPTION:
+        # If the incoming article carries a newer
+        # published/updated timestamp than the stored
+        # record, treat it as an update candidate and
+        # let event memory decide whether the update
+        # is meaningful.
         # -----------------------------------------------------
 
-        if c.execute(
-            "SELECT 1 FROM stories WHERE id=?",
+        stored = c.execute(
+            "SELECT first_seen FROM stories "
+            "WHERE id=?",
             (x["id"],)
-        ).fetchone():
+        ).fetchone()
+
+        if stored:
+
+            if not _is_newer_update(
+                x.get(
+                    "effective_at"
+                ),
+                stored[0]
+            ):
+
+                run_stats[
+                    "already_seen"
+                ] += 1
+
+                continue
 
             run_stats[
-                "already_seen"
+                "update_candidates"
             ] += 1
-
-            continue
 
         run_stats[
             "new_candidates"
@@ -370,7 +470,7 @@ def main():
         # -----------------------------------------------------
 
         c.execute(
-            "INSERT INTO stories VALUES "
+            "INSERT OR REPLACE INTO stories VALUES "
             "(?,?,?,?,?,?,?,?,?,?,?)",
             (
                 x["id"],

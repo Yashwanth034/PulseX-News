@@ -1,6 +1,6 @@
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 def init_events(conn):
@@ -421,3 +421,75 @@ def mark_queued(
         """,
         (event_id,)
     )
+
+
+def purge_expired(
+    conn,
+    story_memory_hours=48,
+    memory_hours=48,
+    major_memory_hours=168
+):
+    """
+    Delete only records whose retention period has elapsed.
+
+    - Individual stories expire after story_memory_hours.
+    - Normal events expire after memory_hours.
+    - Major events expire after major_memory_hours.
+
+    Timestamp-based, idempotent, and safe to run on
+    every collection cycle (including every 5 minutes
+    in GitHub Actions). Active records are never touched.
+    """
+    now = datetime.now(
+        timezone.utc
+    )
+
+    story_cutoff = (
+        now - timedelta(
+            hours=story_memory_hours
+        )
+    ).isoformat()
+
+    event_cutoff = (
+        now - timedelta(
+            hours=memory_hours
+        )
+    ).isoformat()
+
+    major_cutoff = (
+        now - timedelta(
+            hours=major_memory_hours
+        )
+    ).isoformat()
+
+    stories_expired = conn.execute(
+        """
+        DELETE FROM stories
+        WHERE first_seen < ?
+        """,
+        (story_cutoff,)
+    ).rowcount
+
+    normal_events_expired = conn.execute(
+        """
+        DELETE FROM events
+        WHERE major=0 AND last_seen < ?
+        """,
+        (event_cutoff,)
+    ).rowcount
+
+    major_events_expired = conn.execute(
+        """
+        DELETE FROM events
+        WHERE major=1 AND last_seen < ?
+        """,
+        (major_cutoff,)
+    ).rowcount
+
+    conn.commit()
+
+    return {
+        "stories_expired": stories_expired,
+        "normal_events_expired": normal_events_expired,
+        "major_events_expired": major_events_expired,
+    }

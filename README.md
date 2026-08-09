@@ -79,6 +79,20 @@ The bot is deliberately conservative:
 - **Human review** — optional approval layer (`src/review_cli.py`), on by default
 - **Thread capacity** — a 3-tweet thread counts as 3 posts, checked before the first tweet is sent
 
+## Memory & retention
+
+The bot keeps two kinds of memory in `data/news.db`, cleaned automatically on every collection run:
+
+| Memory | Retention | What it does |
+|---|---|---|
+| Individual stories (`stories` table) | 48 hours (`story_memory_hours`) | Prevents already-seen articles from being re-processed |
+| Normal events (`events` table, `major=0`) | 48 hours (`event_memory_hours`) | Tracks how a story develops across sources |
+| Major events (`events` table, `major=1`) | 168 hours / 7 days (`major_event_memory_hours`) | Keeps high-priority events in memory longer |
+
+- **Automatic cleanup** — every run of `src.main` deletes only records whose retention has elapsed (timestamp-based, idempotent, safe in GitHub Actions)
+- **Update detection** — if the same URL/title reappears with a newer published/updated timestamp, event memory re-examines it; meaningful changes become `UPDATE` events, mere timestamp bumps stay duplicates
+- **Deduplication is never weakened** — same article with same/older timestamp is still skipped instantly
+
 ## Environment variables
 
 | Variable | Default | Purpose |
