@@ -1,0 +1,6 @@
+.env
+data/web_session.json
+data/bot_run.log
+data/manual_login.log
+.venv/
+__pycache__/

@@ -1,0 +1,15 @@
+{
+  "status": "YELLOW",
+  "checked_at": "2026-08-09T05:08:03.587382+00:00",
+  "reasons": [],
+  "warnings": [
+    "no stories are currently ready"
+  ],
+  "ready": 0,
+  "held": 0,
+  "stories_seen": 0,
+  "current_quality_failures": 0,
+  "historical_quality_failures": 0,
+  "source_count": 42,
+  "translation_held": 0
+}

@@ -1,43 +1,167 @@
-# World News Bot — Step 26: Human Review Mode
+# World News Bot
 
-A controlled human-review layer now sits between the news queue and live X publishing.
+An automated news bot that collects headlines from RSS sources, filters and prioritizes them, and posts them to X (Twitter) — fully automatically, on a schedule.
 
-## Decisions
+## How it works
 
-Each story can be:
-- `APPROVE`
-- `REJECT`
-- `HOLD`
-- `PENDING` (default)
+```
+RSS sources → collect → verify/translate → qualify → prioritize
+    → queue → human review (optional) → publish to X
+```
 
-## Default safety
+1. **Collect** (`src/main.py`) — gathers news from 40+ RSS sources
+2. **Verify & translate** (`src/intelligence.py`, `src/translator.py`) — classifies stories and translates non-English content to English
+3. **Quality check** (`src/quality.py`) — filters out low-quality or duplicate stories
+4. **Prioritize** (`src/priority.py`) — ranks stories by importance
+5. **Queue** — ready stories land in `data/queue.json`
+6. **Publish** (`src/production_run.py`) — posts stories to X with safety limits
 
-`X_REQUIRE_HUMAN_REVIEW=true`
+## Posting to X
 
-Therefore, even if live X publishing is later enabled, an unapproved story is blocked.
+The bot can post using **three methods** (selected via `X_POST_METHOD`):
 
-## CLI review
+| Method | Description |
+|---|---|
+| `web` (default) | Browser automation through a **saved login session** — no API token needed |
+| `cdp` | Connects to your own Chrome/Brave browser via remote debugging |
+| `api` | Official X API v2 (requires a paid token) |
 
-After a dry run, a story can be reviewed with:
+### One-time setup (web method)
 
-`python -m src.review_cli STORY_ID APPROVE`
+1. Create `.env` in the project root:
+   ```
+   X_USERNAME="your_x_username"
+   X_PASSWORD="your_x_password"
+   ```
+2. Log in once to capture the session:
+   ```bash
+   .venv/bin/python test_x_web.py manual
+   ```
+   A browser opens — log in manually. The session is saved to `data/web_session.json` and reused forever. **No repeated logins.**
 
-or:
+3. Enable live publishing (see [Environment variables](#environment-variables)).
 
-`python -m src.review_cli STORY_ID REJECT "reason"`
+### One-time setup (cdp method)
 
-or:
+Useful when X restricts automated logins:
 
-`python -m src.review_cli STORY_ID HOLD "needs another source"`
+1. Start your real browser with the debug port:
+   ```bash
+   brave-browser --remote-debugging-port=9222 &
+   ```
+2. Log in to x.com in that browser window.
+3. Test posting:
+   ```bash
+   .venv/bin/python test_cdp.py post "hello"
+   ```
 
-The review is stored in `data/reviews.json`.
+### Posting methods compared
 
-## Why this is useful
+| | `web` | `cdp` | `api` |
+|---|---|---|---|
+| Cost | Free | Free | ~$100/month |
+| Needs browser | No (saved session) | Yes (running) | No |
+| Risk of login limits | Low | None | None |
+| ToS risk | Yes | Yes | No |
 
-It allows the system to operate in three phases:
+> **Note:** Browser-based posting (web/cdp) is against X's Terms of Service and carries a risk of account suspension. The official API is the only fully compliant option. Use a throwaway account if possible.
 
-1. Dry run — observe everything.
-2. Human review — approve selected stories.
-3. Fully automatic mode — only after the system has demonstrated reliable behavior.
+## Safety features
 
-The default remains conservative.
+The bot is deliberately conservative:
+
+- **Dry run by default** — `X_PUBLISH_ENABLED` defaults to `false`, nothing ever contacts X
+- **Kill switch** — `X_KILL_SWITCH` defaults to `true`, blocks all publishing
+- **Daily limit** — max 40 posts per UTC day (`X_DAILY_POST_LIMIT`)
+- **Half-hour limit** — max 3 posts per rolling 30 minutes (`X_HALF_HOUR_POST_LIMIT`)
+- **Health gate** — RED health blocks publishing (`src/health_gate.py`)
+- **Production controller** — final approval gate before any post (`src/production_controller.py`)
+- **Human review** — optional approval layer (`src/review_cli.py`), on by default
+- **Thread capacity** — a 3-tweet thread counts as 3 posts, checked before the first tweet is sent
+
+## Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `X_USERNAME` | — | X account username/email (in `.env`) |
+| `X_PASSWORD` | — | X account password (in `.env`) |
+| `X_OTP` | — | One-time verification code, if X asks |
+| `X_HEADLESS` | `true` | `false` to watch the browser |
+| `X_PUBLISH_ENABLED` | `false` | `true` to allow live publishing |
+| `X_KILL_SWITCH` | `true` | `false` to disarm the kill switch |
+| `X_REQUIRE_HUMAN_REVIEW` | `true` | `false` to skip the approval layer |
+| `X_POST_METHOD` | `web` | `web`, `cdp`, or `api` |
+| `X_DAILY_POST_LIMIT` | `40` | Max posts per UTC day |
+| `X_HALF_HOUR_POST_LIMIT` | `3` | Max posts per rolling 30 min |
+| `X_USER_ACCESS_TOKEN` | — | Official API bearer token (api method only) |
+| `X_CDP_URL` | `http://localhost:9222` | CDP debug endpoint |
+
+## Running
+
+### Automatic (every 30 minutes)
+
+```bash
+crontab -e
+# add:
+*/30 * * * * /path/to/project/run_bot.sh >/dev/null 2>&1
+```
+
+`run_bot.sh` collects news, runs the health gate, and publishes — logging to `data/bot_run.log`.
+
+### Manual
+
+```bash
+# collect news
+.venv/bin/python -m src.main
+
+# preview what would be posted (dry run)
+.venv/bin/python -m src.dry_run
+
+# publish (after enabling env vars)
+.venv/bin/python -m src.production_run
+
+# review a story (if human review is enabled)
+.venv/bin/python -m src.review_cli STORY_ID APPROVE
+```
+
+### Tests
+
+```bash
+.venv/bin/python -m src.regression_test
+.venv/bin/python -m src.test_quality
+```
+
+## GitHub Actions
+
+The repository includes `.github/workflows/news.yml`, which runs the collection pipeline every 5 minutes in the cloud (collect, verify, quality, health gate, dashboard, metrics) and persists event memory to the `state` branch. Publishing is intentionally **not** done in CI — cloud runners cannot access your local browser session.
+
+## Security
+
+- Credentials live only in `.env`, which is **gitignored** — never committed to GitHub
+- The saved browser session (`data/web_session.json`) is also gitignored
+- Even with a public repository, no secrets reach the repo
+
+## Project layout
+
+```
+src/
+  collector.py            # RSS feed collection
+  intelligence.py         # classification & verification
+  translator.py           # translation to English
+  quality.py              # quality filtering
+  priority.py             # story ranking
+  formatter.py            # tweet/thread formatting
+  production_run.py       # publish entry point
+  production_controller.py# final safety gate
+  x_publisher.py          # official API publisher
+  x_web_publisher.py      # browser-based publisher (saved session)
+  health_gate.py          # system health status
+  review_cli.py           # manual story review
+  dashboard.py            # review dashboard
+  metrics.py              # run metrics
+  status.py               # run status
+data/                     # queue, state, sessions, logs (gitignored where needed)
+test_x_web.py             # login/session/post test tools
+test_cdp.py               # CDP browser test tools
+run_bot.sh                # cron entry point
+```

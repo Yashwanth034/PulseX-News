@@ -1,0 +1,342 @@
+{
+  "generated_at": "2026-08-09T05:08:03.468356+00:00",
+  "max_age_hours": 48,
+  "sources": [
+    {
+      "source": "France 24",
+      "url": "https://www.france24.com/en/rss",
+      "status": 200,
+      "entries_seen": 24,
+      "recent_entries": 24,
+      "error": null
+    },
+    {
+      "source": "BBC World",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "status": 200,
+      "entries_seen": 32,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "NPR Science",
+      "url": "https://feeds.npr.org/1007/rss.xml",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 4,
+      "error": null
+    },
+    {
+      "source": "NPR World",
+      "url": "https://feeds.npr.org/1004/rss.xml",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 9,
+      "error": null
+    },
+    {
+      "source": "NPR Technology",
+      "url": "https://feeds.npr.org/1019/rss.xml",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 3,
+      "error": null
+    },
+    {
+      "source": "Al Jazeera",
+      "url": "https://www.aljazeera.com/xml/rss/all.xml",
+      "status": 200,
+      "entries_seen": 25,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "NPR Business",
+      "url": "https://feeds.npr.org/1006/rss.xml",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 5,
+      "error": null
+    },
+    {
+      "source": "BBC Science",
+      "url": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+      "status": 200,
+      "entries_seen": 41,
+      "recent_entries": 18,
+      "error": null
+    },
+    {
+      "source": "BBC Business",
+      "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+      "status": 200,
+      "entries_seen": 53,
+      "recent_entries": 6,
+      "error": null
+    },
+    {
+      "source": "The Guardian World",
+      "url": "https://www.theguardian.com/world/rss",
+      "status": 200,
+      "entries_seen": 45,
+      "recent_entries": 19,
+      "error": null
+    },
+    {
+      "source": "The Guardian Science",
+      "url": "https://www.theguardian.com/science/rss",
+      "status": 200,
+      "entries_seen": 27,
+      "recent_entries": 6,
+      "error": null
+    },
+    {
+      "source": "BBC Technology",
+      "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+      "status": 200,
+      "entries_seen": 21,
+      "recent_entries": 2,
+      "error": null
+    },
+    {
+      "source": "BBC Health",
+      "url": "https://feeds.bbci.co.uk/news/health/rss.xml",
+      "status": 200,
+      "entries_seen": 52,
+      "recent_entries": 4,
+      "error": null
+    },
+    {
+      "source": "The Guardian Technology",
+      "url": "https://www.theguardian.com/technology/rss",
+      "status": 302,
+      "entries_seen": 29,
+      "recent_entries": 9,
+      "error": null
+    },
+    {
+      "source": "The Guardian Business",
+      "url": "https://www.theguardian.com/business/rss",
+      "status": 302,
+      "entries_seen": 36,
+      "recent_entries": 24,
+      "error": null
+    },
+    {
+      "source": "SEC Press Releases",
+      "url": "https://www.sec.gov/news/pressreleases.rss",
+      "status": 200,
+      "entries_seen": 25,
+      "recent_entries": 0,
+      "error": null
+    },
+    {
+      "source": "SEC Litigation Releases",
+      "url": "https://www.sec.gov/rss/litigation.xml",
+      "status": 403,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": "<unknown>:33:2: mismatched tag"
+    },
+    {
+      "source": "DW Business",
+      "url": "https://rss.dw.com/rdf/rss-en-bus",
+      "status": 200,
+      "entries_seen": 20,
+      "recent_entries": 0,
+      "error": null
+    },
+    {
+      "source": "DW World",
+      "url": "https://rss.dw.com/rdf/rss-en-world",
+      "status": 200,
+      "entries_seen": 12,
+      "recent_entries": 11,
+      "error": null
+    },
+    {
+      "source": "NASA News",
+      "url": "https://www.nasa.gov/feed/",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 4,
+      "error": null
+    },
+    {
+      "source": "NASA News Releases",
+      "url": "https://www.nasa.gov/news-release/feed/",
+      "status": 200,
+      "entries_seen": 10,
+      "recent_entries": 4,
+      "error": null
+    },
+    {
+      "source": "Arab News",
+      "url": "https://www.arabnews.com/rss",
+      "status": 200,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": "<unknown>:2:7: syntax error"
+    },
+    {
+      "source": "USGS Significant Earthquakes",
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_hour.atom",
+      "status": 200,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": null
+    },
+    {
+      "source": "Africanews English",
+      "url": "https://www.africanews.com/feed/",
+      "status": 200,
+      "entries_seen": 50,
+      "recent_entries": 22,
+      "error": null
+    },
+    {
+      "source": "Google News India Discovery",
+      "url": "https://news.google.com/rss/search?q=India+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
+      "status": 200,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "JPL News",
+      "url": "https://www.jpl.nasa.gov/feeds/news/",
+      "status": 403,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": "<unknown>:5:2: mismatched tag"
+    },
+    {
+      "source": "Google News Japan Discovery",
+      "url": "https://news.google.com/rss/search?q=Japan+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "CISA Alerts",
+      "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml",
+      "status": 200,
+      "entries_seen": 30,
+      "recent_entries": 2,
+      "error": null
+    },
+    {
+      "source": "Google News Europe Discovery",
+      "url": "https://news.google.com/rss/search?q=Europe+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News South Korea Discovery",
+      "url": "https://news.google.com/rss/search?q=South+Korea+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Africa Discovery",
+      "url": "https://news.google.com/rss/search?q=Africa+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Southeast Asia Discovery",
+      "url": "https://news.google.com/rss/search?q=Southeast+Asia+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 69,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News China Discovery",
+      "url": "https://news.google.com/rss/search?q=China+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Middle East Discovery",
+      "url": "https://news.google.com/rss/search?q=Middle+East+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Australia Discovery",
+      "url": "https://news.google.com/rss/search?q=Australia+when:1d&hl=en&gl=AU&ceid=AU:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Latin America Discovery",
+      "url": "https://news.google.com/rss/search?q=Latin+America+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 67,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Canada Discovery",
+      "url": "https://news.google.com/rss/search?q=Canada+when:1d&hl=en&gl=CA&ceid=CA:en",
+      "status": 302,
+      "entries_seen": 100,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "Google News Pacific Discovery",
+      "url": "https://news.google.com/rss/search?q=Pacific+Islands+when:1d&hl=en&gl=US&ceid=US:en",
+      "status": 302,
+      "entries_seen": 47,
+      "recent_entries": 25,
+      "error": null
+    },
+    {
+      "source": "The Indian Express",
+      "url": "https://indianexpress.com/rss/",
+      "status": 200,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": "<unknown>:6:381: not well-formed (invalid token)"
+    },
+    {
+      "source": "WHO News",
+      "url": "https://www.who.int/rss-feeds/news-english.xml",
+      "status": 200,
+      "entries_seen": 25,
+      "recent_entries": 0,
+      "error": null
+    },
+    {
+      "source": "ESA News",
+      "url": "https://www.esa.int/rssfeed/Our_Activities/Space_News",
+      "status": 200,
+      "entries_seen": 9,
+      "recent_entries": 4,
+      "error": null
+    },
+    {
+      "source": "NOAA Ocean News",
+      "url": "https://oceanservice.noaa.gov/rss/news.xml",
+      "status": 200,
+      "entries_seen": 0,
+      "recent_entries": 0,
+      "error": "<unknown>:17:2: mismatched tag"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from src.production_controller import controller
 from src.x_publisher import XPublisher, XPublisherError
@@ -15,9 +16,14 @@ def main():
         return
 
     queue=json.loads(QUEUE.read_text()) if QUEUE.exists() else {"stories":[]}
-    publisher=XPublisher()
+    method=os.getenv("X_POST_METHOD","web").lower()
+    if method=="api":
+        publisher=XPublisher()
+    else:
+        from src.x_web_publisher import XWebPublisher
+        publisher=XWebPublisher()
     reviews=load()["reviews"]
-    require_review = __import__("os").getenv("X_REQUIRE_HUMAN_REVIEW","true").lower()=="true"
+    require_review = os.getenv("X_REQUIRE_HUMAN_REVIEW","true").lower()=="true"
     results=[]
     for item in queue.get("stories",[]):
         review=reviews.get(item.get("id"),{})
