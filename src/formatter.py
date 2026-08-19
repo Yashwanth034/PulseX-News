@@ -49,15 +49,26 @@ def split_sentences(text):
     if not text:
         return []
 
+    # Do not mistake common abbreviated month names for sentence endings in
+    # dates such as "Aug. 11". Protect only the period immediately before a
+    # numeric day, then restore it after splitting so public text is unchanged.
+    month_period = "\ue000"
+    protected = re.sub(
+        r"\b(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.(?=\s+\d{1,2}\b)",
+        lambda match: match.group(1) + month_period,
+        text,
+        flags=re.IGNORECASE,
+    )
+
     parts = re.split(
         r"(?<=[.!?])\s+",
-        text
+        protected
     )
 
     complete = []
 
     for part in parts:
-        part = clean(part)
+        part = clean(part.replace(month_period, "."))
 
         if not part:
             continue

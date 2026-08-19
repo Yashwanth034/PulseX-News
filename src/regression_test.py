@@ -387,6 +387,27 @@ def test_clean_west_bank_style_context_still_passes():
     assert result["quality_pass"], result
 
 
+def test_month_abbreviation_date_does_not_split_sentence():
+    item = _story_for_context(
+        "NASA’s LRO Images Falcon 9 Crater on Moon, Learns New Details",
+        (
+            "Between Aug. 11 and 12, NASA’s Lunar Reconnaissance Orbiter (LRO) "
+            "captured a series of images of a new crater on the Moon. "
+            "The crater formed on Aug. 5, when a SpaceX Falcon 9 upper stage "
+            "impacted the surface following its January 2025 launch of the "
+            "Firefly Blue Ghost 1 mission. To capture imagery of the […]"
+        ),
+        source="NASA News",
+    )
+    item.update(format_story(item))
+    result = quality_check(item)
+
+    assert result["quality_pass"], result
+    assert "Between Aug. 11 and 12" in item["post"], item["post"]
+    assert "Details. 11 and 12," not in item["post"], item["post"]
+    assert "formed on Aug. Source:" not in item["post"], item["post"]
+
+
 def main():
     test_normal()
     test_urgent()
@@ -405,6 +426,7 @@ def main():
     test_guardian_live_navigation_tail_is_removed()
     test_tupac_incomplete_context_is_not_publishable()
     test_clean_west_bank_style_context_still_passes()
+    test_month_abbreviation_date_does_not_split_sentence()
 
     print("REGRESSION TESTS PASSED")
 
