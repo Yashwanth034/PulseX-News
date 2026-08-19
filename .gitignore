@@ -4,3 +4,13 @@ data/bot_run.log
 data/manual_login.log
 .venv/
 __pycache__/
+
+# Extra protection for local/browser credentials.
+.env.*
+!.env.example
+**/cookies.json
+**/session.json
+**/storage_state.json
+**/storage-state.json
+**/auth.json
+**/credentials.json

@@ -27,12 +27,14 @@ jobs:
       - name: Restore persistent state
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p data
 
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
             git fetch origin state
-            git show origin/state:data/news.db > data/news.db || true
+            for file in news.db production_state.json; do
+              git show "origin/state:data/${file}" > "data/${file}" 2>/dev/null || rm -f "data/${file}"
+            done
           fi
 
       - name: Set up Python
@@ -42,6 +44,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
 
       - name: Run regression tests
         run: python -m src.regression_test
@@ -78,8 +83,60 @@ jobs:
       - name: Safety health gate
         run: python -m src.health_gate
 
+      - name: Restore one-time X browser session
+        id: x_session
+        shell: bash
+        env:
+          X_WEB_SESSION: ${{ secrets.X_WEB_SESSION }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${X_WEB_SESSION:-}" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::X posting skipped: repository Actions Secret X_WEB_SESSION is missing."
+            exit 0
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          session = json.loads(os.environ["X_WEB_SESSION"])
+          cookies = session.get("cookies") if isinstance(session, dict) else None
+          if not isinstance(cookies, list) or not cookies:
+              raise SystemExit("X_WEB_SESSION is not a valid saved browser session")
+
+          path = Path("data/web_session.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(session), encoding="utf-8")
+          path.chmod(0o600)
+          print("Saved X browser session restored.")
+          PY
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Production controller
+        env:
+          X_PUBLISH_ENABLED: ${{ steps.x_session.outputs.ready }}
+          X_KILL_SWITCH: ${{ steps.x_session.outputs.ready == 'true' && 'false' || 'true' }}
+          X_REQUIRE_HUMAN_REVIEW: "false"
+          X_POST_METHOD: web
         run: python -m src.production_controller
+
+      - name: Publish approved-quality posts to X
+        if: steps.x_session.outputs.ready == 'true'
+        env:
+          X_PUBLISH_ENABLED: "true"
+          X_KILL_SWITCH: "false"
+          X_REQUIRE_HUMAN_REVIEW: "false"
+          X_POST_METHOD: web
+          X_HEADLESS: "true"
+        run: python -m src.production_run
+
+      - name: Remove restored X browser session
+        if: always()
+        run: rm -f data/web_session.json
 
       - name: Human review report
         run: python -m src.review
@@ -97,10 +154,10 @@ jobs:
             data/source_health.json
           retention-days: 1
 
-      - name: Persist event memory
+      - name: Persist bot state
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           git config user.name "world-news-bot"
           git config user.email "world-news-bot@users.noreply.github.com"
@@ -117,20 +174,29 @@ jobs:
           fi
 
           git -C /tmp/news-state remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-
           git -C /tmp/news-state config user.name "world-news-bot"
           git -C /tmp/news-state config user.email "world-news-bot@users.noreply.github.com"
 
           mkdir -p /tmp/news-state/data
-          cp data/news.db /tmp/news-state/data/news.db
+          state_files=()
+          for file in news.db production_state.json; do
+            if [[ -f "data/${file}" ]]; then
+              cp "data/${file}" "/tmp/news-state/data/${file}"
+              state_files+=("data/${file}")
+            fi
+          done
 
           cd /tmp/news-state
 
-          git add data/news.db
+          if [[ "${#state_files[@]}" -eq 0 ]]; then
+            exit 0
+          fi
+
+          git add -- "${state_files[@]}"
 
           if git diff --cached --quiet; then
             exit 0
           fi
 
-          git commit -m "Update news event memory"
+          git commit -m "Update news bot state"
           git push origin HEAD:state

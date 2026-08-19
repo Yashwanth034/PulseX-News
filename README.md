@@ -28,18 +28,11 @@ The bot can post using **three methods** (selected via `X_POST_METHOD`):
 
 ### One-time setup (web method)
 
-1. Create `.env` in the project root:
-   ```
-   X_USERNAME="your_x_username"
-   X_PASSWORD="your_x_password"
-   ```
-2. Log in once to capture the session:
-   ```bash
-   .venv/bin/python test_x_web.py manual
-   ```
-   A browser opens — log in manually. The session is saved to `data/web_session.json` and reused forever. **No repeated logins.**
+1. Capture a logged-in X browser session once and save it as `data/web_session.json`.
+2. Reuse that saved session for normal posting. The publisher checks the session first and does not perform another password login while it remains valid.
+3. If X later expires or revokes the saved session, capture a fresh session once. With no username/password configured, the bot fails safely instead of attempting repeated logins.
 
-3. Enable live publishing (see [Environment variables](#environment-variables)).
+For local recovery only, `X_USERNAME`, `X_PASSWORD`, and `X_OTP` may still be supplied manually. They are not required for the normal saved-session path and are not used by the GitHub Actions setup below.
 
 ### One-time setup (cdp method)
 
@@ -97,9 +90,9 @@ The bot keeps two kinds of memory in `data/news.db`, cleaned automatically on ev
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `X_USERNAME` | — | X account username/email (in `.env`) |
-| `X_PASSWORD` | — | X account password (in `.env`) |
-| `X_OTP` | — | One-time verification code, if X asks |
+| `X_USERNAME` | — | Optional local recovery username/email |
+| `X_PASSWORD` | — | Optional local recovery password |
+| `X_OTP` | — | Optional local recovery verification code |
 | `X_HEADLESS` | `true` | `false` to watch the browser |
 | `X_PUBLISH_ENABLED` | `false` | `true` to allow live publishing |
 | `X_KILL_SWITCH` | `true` | `false` to disarm the kill switch |
@@ -156,13 +149,20 @@ crontab -e
 
 ## GitHub Actions
 
-The repository includes `.github/workflows/news.yml`, which runs the collection pipeline every 5 minutes in the cloud (collect, verify, quality, health gate, dashboard, metrics) and persists event memory to the `state` branch. Publishing is intentionally **not** done in CI — cloud runners cannot access your local browser session.
+The repository includes `.github/workflows/news.yml`, which runs every 5 minutes in GitHub Actions. It collects, verifies and quality-checks stories, then can publish qualifying posts through the existing Playwright `web` publisher.
+
+For automatic GitHub posting, create one repository **Actions Secret** under **Settings → Secrets and variables → Actions**:
+
+- `X_WEB_SESSION` — the contents of the one-time captured `data/web_session.json`
+
+The workflow restores that secret into a temporary `data/web_session.json`, publishes through the saved browser login, then deletes the temporary file. No X username or password is supplied to GitHub Actions, so the workflow cannot repeatedly log in with a password. If `X_WEB_SESSION` is missing, collection still runs but publishing is skipped safely. If X expires the saved session, publishing fails and the session must be captured once again. The `state` branch stores only `news.db` and `production_state.json`; browser cookies/session data are never committed there.
 
 ## Security
 
-- Credentials live only in `.env`, which is **gitignored** — never committed to GitHub
-- The saved browser session (`data/web_session.json`) is also gitignored
-- Even with a public repository, no secrets reach the repo
+- Local recovery credentials, if used, live only in `.env`, which is **gitignored**
+- The saved browser session (`data/web_session.json`) is also gitignored and must never be committed
+- GitHub Actions receives the saved session only through the encrypted `X_WEB_SESSION` repository secret
+- The workflow deletes the restored session file after the publish attempt and never persists it to the public `state` branch or artifacts
 
 ## Project layout
 

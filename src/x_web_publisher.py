@@ -94,6 +94,17 @@ class _WebComposer:
     def ensure_logged_in(self):
         if self._session_is_valid():
             return
+
+        # A saved browser session is the normal unattended path.
+        # Username/password are only an optional local recovery path.
+        # GitHub Actions intentionally runs without them so it can never
+        # fall back to repeated password logins when a session expires.
+        if not self.username or not self.password:
+            raise XPublisherError(
+                "Saved X session is missing or expired. "
+                "Re-capture the one-time browser session."
+            )
+
         self._login()
         self._skip_onboarding()
         self._save_session()
@@ -282,8 +293,11 @@ class _WebComposer:
 
 class XWebPublisher(XPublisher):
     """
-    X publisher that logs in with a username and password
-    and posts through the x.com web interface using Playwright.
+    X publisher that posts through the x.com web interface using Playwright.
+
+    The preferred unattended mode reuses a previously captured browser
+    session. Username/password are optional only for local recovery when a
+    saved session is unavailable; GitHub Actions does not receive them.
 
     Safety rules are identical to XPublisher:
 
@@ -296,14 +310,16 @@ class XWebPublisher(XPublisher):
 
     Environment variables:
 
-        X_USERNAME          X account username or email
-        X_PASSWORD          X account password
-        X_OTP               optional verification code for 2FA
+        X_USERNAME          optional local recovery username/email
+        X_PASSWORD          optional local recovery password
+        X_OTP               optional local recovery verification code
         X_HEADLESS          "false" to watch the browser (default "true")
         X_PUBLISH_ENABLED   "true" to enable live publishing
 
-    A successful login is saved to data/web_session.json
-    and reused on later runs.
+    The normal unattended path uses data/web_session.json captured once from
+    an already logged-in browser. If that saved session expires and no local
+    recovery credentials are present, publishing fails safely instead of
+    attempting another login.
     """
 
     def __init__(self):
@@ -340,12 +356,6 @@ class XWebPublisher(XPublisher):
                 }
                 for text in item.get("thread", [])
             ]
-
-        if not self.username or not self.password:
-            raise XPublisherError(
-                "Web publishing requires X_USERNAME "
-                "and X_PASSWORD environment variables"
-            )
 
         # =================================================
         # SINGLE POST
