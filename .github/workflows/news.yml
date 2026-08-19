@@ -45,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright Chromium
-        run: python -m playwright install --with-deps chromium
+      - name: Verify runner Chrome
+        run: google-chrome --version
 
       - name: Run regression tests
         run: python -m src.regression_test
@@ -132,6 +132,7 @@ jobs:
           X_REQUIRE_HUMAN_REVIEW: "false"
           X_POST_METHOD: web
           X_HEADLESS: "true"
+          X_BROWSER_CHANNEL: chrome
         run: python -m src.production_run
 
       - name: Remove restored X browser session

@@ -71,7 +71,11 @@ class _WebComposer:
         self.headless = headless
         self.otp = otp
         self._pw = sync_playwright().start()
-        self.browser = self._pw.chromium.launch(headless=self.headless)
+        launch_options = {"headless": self.headless}
+        browser_channel = os.getenv("X_BROWSER_CHANNEL", "").strip()
+        if browser_channel:
+            launch_options["channel"] = browser_channel
+        self.browser = self._pw.chromium.launch(**launch_options)
         storage = None
         if session_file.exists():
             try:
