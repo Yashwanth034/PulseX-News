@@ -1,15 +1,16 @@
 import feedparser
+import html
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 
 def clean(t):
-    return re.sub(
-        r"\s+",
-        " ",
-        re.sub(r"<[^>]+>", " ", t or "")
-    ).strip()
+    """Normalize feed text before it enters the news pipeline."""
+    text = html.unescape(t or "")
+    text = text.replace("\xa0", " ").replace("\u200b", " ")
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def parse_entry_time(entry, key):

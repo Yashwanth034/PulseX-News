@@ -152,30 +152,9 @@
       "tier": 1
     },
     {
-      "name": "JPL News",
-      "url": "https://www.jpl.nasa.gov/feeds/news/",
-      "category": "space",
-      "primary": true,
-      "tier": 1
-    },
-    {
       "name": "SEC Press Releases",
       "url": "https://www.sec.gov/news/pressreleases.rss",
       "category": "finance",
-      "primary": true,
-      "tier": 1
-    },
-    {
-      "name": "SEC Litigation Releases",
-      "url": "https://www.sec.gov/rss/litigation.xml",
-      "category": "finance",
-      "primary": true,
-      "tier": 1
-    },
-    {
-      "name": "NOAA Ocean News",
-      "url": "https://oceanservice.noaa.gov/rss/news.xml",
-      "category": "disaster",
       "primary": true,
       "tier": 1
     },
@@ -199,22 +178,6 @@
       "category": "space",
       "primary": true,
       "tier": 1
-    },
-    {
-      "name": "The Indian Express",
-      "url": "https://indianexpress.com/rss/",
-      "category": "india",
-      "primary": false,
-      "tier": 2,
-      "region": "South Asia"
-    },
-    {
-      "name": "Arab News",
-      "url": "https://www.arabnews.com/rss",
-      "category": "middle-east",
-      "primary": false,
-      "tier": 2,
-      "region": "Middle East"
     },
     {
       "name": "Africanews English",

@@ -1,11 +1,32 @@
+import html
 import re
 
 POST_LIMIT = 270
 
+DANGLING_END_WORDS = {
+    "a", "an", "the", "and", "or", "but", "because", "while",
+    "during", "after", "before", "with", "without", "from", "to",
+    "of", "in", "on", "at", "for", "as", "than", "that", "which",
+    "who", "where", "when",
+}
+
+INCOMPLETE_FINAL_WORDS = {
+    "got", "get", "gets", "getting", "seek", "seeks", "seeking",
+    "save", "saves", "saving",
+}
+
+SUSPICIOUS_INTERNAL_STARTERS = (
+    "Scientists", "Officials", "Authorities", "Researchers", "Police",
+    "Meanwhile", "However",
+)
+
 
 def clean(text):
-    """Normalize whitespace without destroying useful content."""
-    return re.sub(r"\s+", " ", text or "").strip()
+    """Decode entities, remove markup, and normalize public-facing text."""
+    text = html.unescape(text or "")
+    text = text.replace("\xa0", " ").replace("\u200b", " ")
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def clean_sentence(text):
@@ -22,12 +43,7 @@ def clean_sentence(text):
 
 
 def split_sentences(text):
-    """
-    Split normal prose into complete sentences.
-
-    If the source summary has poor punctuation, this function
-    still returns usable text rather than failing.
-    """
+    """Return only source fragments that already end as real sentences."""
     text = clean(text)
 
     if not text:
@@ -38,11 +54,18 @@ def split_sentences(text):
         text
     )
 
-    return [
-        clean_sentence(part)
-        for part in parts
-        if clean(part)
-    ]
+    complete = []
+
+    for part in parts:
+        part = clean(part)
+
+        if not part:
+            continue
+
+        if re.search(r"[.!?][\"')\]]?$", part):
+            complete.append(part)
+
+    return complete
 
 
 def label(item, breaking_min_score=75):
@@ -53,16 +76,15 @@ def label(item, breaking_min_score=75):
     corroboration = item.get("strong_corroboration", 0)
     status = item.get("event_status", "NEW")
 
-    # Never call low-confidence information breaking.
+    # Never overstate low-confidence information.
     if confidence == "low":
         return "⚠️ UNCONFIRMED"
 
-    # Existing event with meaningful new information.
+    # A meaningful development to an existing event should be
+    # visibly identified as an update instead of collapsing back
+    # into the generic NEWS label.
     if status == "UPDATE":
-        if score >= 80:
-            return "🔴 UPDATE"
-
-        return "📰 NEWS"
+        return "🔴 UPDATE"
 
     urgent_categories = {
         "conflict",
@@ -71,26 +93,30 @@ def label(item, breaking_min_score=75):
         "finance",
         "health",
         "cybersecurity",
+        "technology",
         "world",
     }
 
     urgent = bool(item.get("urgency_terms"))
 
+    # One strong independent corroborating source plus the original
+    # report is sufficient verification for a breaking label. Primary
+    # sources remain independently eligible.
     verified = (
         primary
-        or corroboration >= 2
+        or corroboration >= 1
     )
 
     if (
         score >= breaking_min_score
-        and confidence == "high"
+        and confidence in {"high", "medium"}
         and category in urgent_categories
         and urgent
         and verified
     ):
         return "🚨 BREAKING"
 
-    if score >= 55:
+    if score >= 65:
         return "📰 NEWS"
 
     return "📰 DEVELOPING"
@@ -117,6 +143,133 @@ def make_source_sentence(source):
     )
 
 
+def strip_feed_boilerplate(text):
+    """Remove known feed-navigation/promotional fragments from context."""
+    text = clean(text)
+
+    # Prefixes that describe a feed UI rather than the story itself.
+    text = re.sub(
+        r"^(?:View\s+CSAF\s+Summary\s+)+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # NASA APOD feeds can expose a navigation-card summary rather than
+    # article prose. Publishing that metadata is worse than holding the
+    # story for lack of usable context.
+    if re.match(
+        r"^(?:APOD\s+Science\s+)?APOD(?:\s+APOD)?\s*:",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return ""
+
+    # Once these navigation/promotional fragments begin, the remainder
+    # is not useful story context and should never reach a public post.
+    tail_markers = [
+        r"\bToday[’']s\s+APOD\b",
+        r"\bArchive\s+Submissions\s+Index\s+Search\s+Calendar\s+RSS\b",
+        r"\bAstronomy\s+Picture\s+of\s+the\s+Day\s+Discover\s+the\s+cosmos\b",
+        r"\bContinue\s+reading\b",
+        r"\bSign\s+up\s+to\s+our\s+newsletter\b",
+        r"\bSubscribe\s+to\s+our\s+newsletter\b",
+        r"\b(?:(?-i:[A-Z])[A-Za-z]+(?:\s+[A-Za-z]+){0,4})\s+live\s+[–-]\s+latest\s+updates\b",
+    ]
+
+    for marker in tail_markers:
+        text = re.split(
+            marker,
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+
+    return clean(text)
+
+
+def normalize_context_prose(text):
+    """Apply only conservative grammar repairs before sentence selection."""
+    text = clean(text)
+
+    # Common malformed RSS wording seen in otherwise useful prose.
+    text = re.sub(
+        r"\bin\s+form\s+of\b",
+        "in the form of",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"([,;])\s+company\b",
+        r"\1 the company",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Some feeds concatenate a new sentence without punctuation.
+    starters = "|".join(SUSPICIOUS_INTERNAL_STARTERS)
+    text = re.sub(
+        rf"(?<=[a-z0-9])\s+(?=(?:{starters})\b)",
+        ". ",
+        text,
+    )
+
+    # A capitalized date transition embedded after prose is also a
+    # frequent sign that two feed fragments were concatenated.
+    months = (
+        "January|February|March|April|May|June|July|August|"
+        "September|October|November|December"
+    )
+    text = re.sub(
+        rf"(?<=[a-z0-9])\s+(?=In\s+(?:{months}|20\d{{2}})\b)",
+        ". ",
+        text,
+    )
+
+    return clean(text)
+
+
+def is_usable_context_sentence(sentence):
+    """Reject source fragments that are structurally unsafe to publish."""
+    sentence = clean(sentence)
+
+    if not sentence or not re.search(r"[.!?][\"')\]]?$", sentence):
+        return False
+
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", sentence)
+
+    # Tiny fragments such as "In July 2025." or "Europe." are feed
+    # metadata/context stubs, not explanatory news sentences.
+    if len(words) < 5:
+        return False
+
+    stripped = re.sub(r"[.!?\"')\]]+$", "", sentence).rstrip()
+    final_word = re.findall(r"[A-Za-z]+", stripped.lower())
+
+    if final_word and final_word[-1] in (
+        DANGLING_END_WORDS | INCOMPLETE_FINAL_WORDS
+    ):
+        return False
+
+    # If a source still contains an obvious capitalized sentence starter
+    # in the middle, do not publish the run-on fragment.
+    starters = "|".join(SUSPICIOUS_INTERNAL_STARTERS)
+    if re.search(
+        rf"[a-z0-9]\s+(?:{starters})\b",
+        sentence,
+    ):
+        return False
+
+    if re.search(
+        r"\blive\s+[–-]\s+latest\s+updates\b",
+        sentence,
+        flags=re.IGNORECASE,
+    ):
+        return False
+
+    return True
+
+
 def extract_context_sentences(summary, max_sentences=2):
     """
     Extract useful context without inventing facts.
@@ -127,15 +280,22 @@ def extract_context_sentences(summary, max_sentences=2):
     punctuation. For those, we use safe clause boundaries instead
     of returning an empty post.
     """
-    summary = clean(summary)
+    summary = normalize_context_prose(
+        strip_feed_boilerplate(summary)
+    )
 
     if not summary:
         return []
 
-    # First try normal sentence splitting.
-    sentences = split_sentences(summary)
+    # First try normal sentence splitting and keep only context that is
+    # structurally safe to publish.
+    sentences = [
+        sentence
+        for sentence in split_sentences(summary)
+        if is_usable_context_sentence(sentence)
+    ]
 
-    if len(sentences) >= max_sentences:
+    if sentences:
         return sentences[:max_sentences]
 
     # ---------------------------------------------------------
@@ -165,10 +325,10 @@ def extract_context_sentences(summary, max_sentences=2):
             colon_parts[1]
         )
 
-        if first:
+        if first and is_usable_context_sentence(first):
             clauses.append(first)
 
-        if second:
+        if second and is_usable_context_sentence(second):
             clauses.append(second)
 
     # If we still don't have enough context, look for a clear
@@ -182,24 +342,26 @@ def extract_context_sentences(summary, max_sentences=2):
         for part in transition_parts:
             part = clean_sentence(part)
 
-            if part and part not in clauses:
+            if (
+                part
+                and part not in clauses
+                and is_usable_context_sentence(part)
+            ):
                 clauses.append(part)
 
-    # Final fallback: use the complete summary as one context
-    # sentence if it can fit.
-    if not clauses:
-        clauses = [
-            clean_sentence(summary)
-        ]
-
+    # Do not turn an arbitrary unpunctuated feed fragment into a public
+    # sentence merely by adding a period. If no trustworthy context was
+    # found, return no context and let the quality gate reject the story.
     return clauses[:max_sentences]
 
 
 def shorten_to_words(text, limit):
     """
-    Shorten text at a word boundary.
+    Shorten text at a word boundary and avoid dangling function words.
 
-    Never cuts a word in half.
+    Never cuts a word in half, and it will not deliberately finish a
+    shortened public sentence with fragments such as "the", "of", or
+    "with".
     """
     text = clean(text)
 
@@ -223,6 +385,13 @@ def shorten_to_words(text, limit):
 
     if not result:
         return ""
+
+    while (
+        len(result) > 4
+        and result[-1].strip(".,!?;:'\"()[]").lower()
+        in DANGLING_END_WORDS
+    ):
+        result.pop()
 
     return " ".join(result).rstrip(" ,;:-")
 
@@ -284,65 +453,46 @@ def build_single_post(
 
     context = extract_context_sentences(
         summary,
-        2
+        4
     )
 
     # ---------------------------------------------------------
     # Candidate 1:
     #
-    # Headline + 2 context sentences + source
+    # Headline + 2 COMPLETE context sentences + source.
+    # Try later sentences when the first sentence is unusually long.
     # ---------------------------------------------------------
 
     if len(context) >= 2:
-
-        post = " ".join([
-            headline,
-            context[0],
-            context[1],
-            source_sentence,
-        ])
-
-        if len(post) <= POST_LIMIT:
-            return post
-
-    # ---------------------------------------------------------
-    # Candidate 2:
-    #
-    # Headline + 1 context sentence + source
-    # ---------------------------------------------------------
-
-    if len(context) >= 1:
-
-        context_text = context[0]
-
-        available = (
-            POST_LIMIT
-            - len(headline)
-            - len(source_sentence)
-            - 2
-        )
-
-        if available > 30:
-
-            shortened = shorten_to_words(
-                context_text,
-                available
-            )
-
-            if shortened:
-
-                shortened = clean_sentence(
-                    shortened
-                )
-
+        for first_index in range(len(context) - 1):
+            for second_index in range(first_index + 1, len(context)):
                 post = " ".join([
                     headline,
-                    shortened,
+                    context[first_index],
+                    context[second_index],
                     source_sentence,
                 ])
 
                 if len(post) <= POST_LIMIT:
                     return post
+
+    # ---------------------------------------------------------
+    # Candidate 2:
+    #
+    # Headline + 1 COMPLETE context sentence + source.
+    # Do not manufacture a sentence by cutting prose at an arbitrary
+    # word boundary; choose another complete source sentence instead.
+    # ---------------------------------------------------------
+
+    for context_text in context:
+        post = " ".join([
+            headline,
+            context_text,
+            source_sentence,
+        ])
+
+        if len(post) <= POST_LIMIT:
+            return post
 
     # ---------------------------------------------------------
     # Candidate 3:

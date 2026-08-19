@@ -9,7 +9,7 @@ RSS sources → collect → verify/translate → qualify → prioritize
     → queue → human review (optional) → publish to X
 ```
 
-1. **Collect** (`src/main.py`) — gathers news from 40+ RSS sources
+1. **Collect** (`src/main.py`) — gathers news from dozens of validated RSS sources
 2. **Verify & translate** (`src/intelligence.py`, `src/translator.py`) — classifies stories and translates non-English content to English
 3. **Quality check** (`src/quality.py`) — filters out low-quality or duplicate stories
 4. **Prioritize** (`src/priority.py`) — ranks stories by importance
@@ -110,17 +110,26 @@ The bot keeps two kinds of memory in `data/news.db`, cleaned automatically on ev
 | `X_USER_ACCESS_TOKEN` | — | Official API bearer token (api method only) |
 | `X_CDP_URL` | `http://localhost:9222` | CDP debug endpoint |
 
+## Setup
+
+Create the local virtual environment once and install all runtime/test dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
 ## Running
 
-### Automatic (every 30 minutes)
+### Automatic (every 5 minutes)
 
 ```bash
 crontab -e
 # add:
-*/30 * * * * /path/to/project/run_bot.sh >/dev/null 2>&1
+*/5 * * * * /path/to/project/run_bot.sh >/dev/null 2>&1
 ```
 
-`run_bot.sh` collects news, runs the health gate, and publishes — logging to `data/bot_run.log`.
+`run_bot.sh` collects news, runs the health gate, then invokes the production runner and logs to `data/bot_run.log`. It no longer overrides safety settings. For unattended live posting, explicitly set `X_PUBLISH_ENABLED=true`, `X_KILL_SWITCH=false`, and (only if desired) `X_REQUIRE_HUMAN_REVIEW=false` in `.env`; otherwise publishing remains safely blocked.
 
 ### Manual
 

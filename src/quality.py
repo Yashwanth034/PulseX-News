@@ -3,6 +3,28 @@ import re
 
 POST_LIMIT = 270
 
+DANGLING_ENDINGS = (
+    " and", " or", " but", " because", " while", " during",
+    " after", " before", " with", " without", " from", " to",
+    " of", " in", " on", " at", " for", " as", " than", " that",
+    " which", " who", " where", " when", " an", " a", " the",
+)
+
+HTML_ENTITY_RE = re.compile(
+    r"&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);",
+    re.IGNORECASE,
+)
+
+INCOMPLETE_FINAL_WORDS = {
+    "got", "get", "gets", "getting", "seek", "seeks", "seeking",
+    "save", "saves", "saving",
+}
+
+SUSPICIOUS_INTERNAL_STARTERS = (
+    "Scientists", "Officials", "Authorities", "Researchers", "Police",
+    "Meanwhile", "However",
+)
+
 
 # ---------------------------------------------------------
 # Sentence helpers
@@ -75,6 +97,9 @@ def has_rss_junk(text):
         r"\bfollow us on\b",
         r"\bdownload our app\b",
         r"\blisten to our podcast\b",
+        r"\btoday[’']s apod\b",
+        r"\barchive submissions index search calendar rss\b",
+        r"\bdiscover the cosmos\b",
     ]
 
     for pattern in junk_patterns:
@@ -87,11 +112,56 @@ def has_rss_junk(text):
     return False
 
 
+def has_html_entity(text):
+    """Reject encoded HTML entities that would leak into a public post."""
+    return bool(HTML_ENTITY_RE.search(text or ""))
+
+
+def has_unsafe_prose_fragment(text):
+    """Detect malformed source prose that punctuation checks alone miss."""
+    text = text or ""
+
+    if re.search(r"\bin\s+form\s+of\b", text, flags=re.IGNORECASE):
+        return True
+
+    if re.search(r"[,;]\s+company\b", text, flags=re.IGNORECASE):
+        return True
+
+    if re.search(
+        r"\blive\s+[–-]\s+latest\s+updates\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
+    starters = "|".join(SUSPICIOUS_INTERNAL_STARTERS)
+    if re.search(
+        rf"[a-z0-9]\s+(?:{starters})\b",
+        text,
+    ):
+        return True
+
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        stripped = re.sub(
+            r"[.!?\"')\]]+$",
+            "",
+            sentence.strip().lower(),
+        ).rstrip()
+        words = re.findall(r"[a-z]+", stripped)
+
+        if words and words[-1] in INCOMPLETE_FINAL_WORDS:
+            return True
+
+    return False
+
+
 def looks_truncated(text):
     """
-    Detect obvious signs that text was cut off.
+    Detect obvious cut-offs in every public sentence, not just the
+    final sentence of the whole post.
 
-    This is deliberately conservative.
+    This catches failures such as "must survive the. Source: NASA.",
+    where the old implementation only inspected the final source line.
     """
 
     text = (text or "").strip()
@@ -99,56 +169,29 @@ def looks_truncated(text):
     if not text:
         return True
 
-    # Must end with normal sentence punctuation.
     if not ends_with_sentence_punctuation(text):
         return True
 
-    # Obvious dangling conjunctions/prepositions/articles.
-    # These are common signs of a sentence being cut.
-    truncated_endings = (
-        " and",
-        " or",
-        " but",
-        " because",
-        " while",
-        " during",
-        " after",
-        " before",
-        " with",
-        " without",
-        " from",
-        " to",
-        " of",
-        " in",
-        " on",
-        " at",
-        " for",
-        " as",
-        " than",
-        " that",
-        " which",
-        " who",
-        " where",
-        " when",
-        " an",
-        " a",
-        " the",
-    )
+    sentences = [
+        part.strip()
+        for part in re.split(
+            r"(?<=[.!?])\s+",
+            text,
+        )
+        if part.strip()
+    ]
 
-    lowered = text.lower()
+    for sentence in sentences:
+        lowered = sentence.lower()
+        stripped = re.sub(
+            r"[.!?\"')\]]+$",
+            "",
+            lowered,
+        ).rstrip()
 
-    # Remove final punctuation before checking the final word.
-    stripped = re.sub(
-        r"[.!?\"')\]]+$",
-        "",
-        lowered
-    ).rstrip()
-
-    for ending in truncated_endings:
-        if stripped.endswith(
-            ending
-        ):
-            return True
+        for ending in DANGLING_ENDINGS:
+            if stripped.endswith(ending):
+                return True
 
     return False
 
@@ -252,6 +295,17 @@ def quality_check(item):
                     "RSS/article-page junk"
                 )
 
+            # Encoded HTML entities must never leak to X.
+            if has_html_entity(post):
+                errors.append(
+                    "single post contains encoded HTML entity"
+                )
+
+            if has_unsafe_prose_fragment(post):
+                errors.append(
+                    "single post contains malformed or incomplete prose"
+                )
+
             # Truncation.
             if looks_truncated(
                 post
@@ -339,6 +393,16 @@ def quality_check(item):
                 errors.append(
                     f"thread post {i} contains "
                     f"RSS/article-page junk"
+                )
+
+            if has_html_entity(post):
+                errors.append(
+                    f"thread post {i} contains encoded HTML entity"
+                )
+
+            if has_unsafe_prose_fragment(post):
+                errors.append(
+                    f"thread post {i} contains malformed or incomplete prose"
                 )
 
         # Final thread post must contain source.
