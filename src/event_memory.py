@@ -1,5 +1,6 @@
 import hashlib
 import re
+import unicodedata
 from datetime import datetime, timezone, timedelta
 
 
@@ -37,12 +38,102 @@ def init_events(conn):
     conn.commit()
 
 
+_EVENT_STOPWORDS = {
+    "a", "an", "the", "to", "for", "of", "in", "on", "at", "by",
+    "from", "with", "and", "or", "as", "during", "amid", "after",
+    "before", "over", "under", "into", "about", "why",
+}
+
+_EVENT_ALIASES = {
+    "elections": "election",
+    "wartime": "war",
+    "sacked": "removed",
+    "ousted": "removed",
+    "dismissed": "removed",
+}
+
+_MATERIAL_UPDATE_TERMS = {
+    "arrest", "arrested", "charge", "charged", "confirm", "confirmed",
+    "die", "died", "kill", "killed", "injure", "injured", "resign",
+    "resigned", "appoint", "appointed", "approve", "approved", "reject",
+    "rejected", "sign", "signed", "launch", "launched", "strike",
+    "strikes", "withdraw", "withdrew", "reopen", "reopened", "close",
+    "closed", "raise", "raised", "rise", "rises", "increase", "increased",
+    "cut", "cuts", "win", "wins", "won", "lose", "loses", "lost",
+}
+
+
 def _tokens(text):
+    """Return normalized content tokens for cross-source event matching."""
+    normalized = unicodedata.normalize(
+        "NFKC",
+        text or ""
+    ).replace("’", "'").lower()
+
+    tokens = set()
+
+    for word in re.findall(
+        r"[a-z0-9][a-z0-9'-]*",
+        normalized
+    ):
+        if word.endswith("'s") and len(word) > 2:
+            word = word[:-2]
+
+        # Very small morphology normalization keeps the matcher
+        # deterministic while allowing headlines such as election/elections
+        # and call/calls to compare as the same event wording.
+        if len(word) > 4 and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif (
+            len(word) > 4
+            and word.endswith("s")
+            and not word.endswith("ss")
+        ):
+            word = word[:-1]
+
+        word = _EVENT_ALIASES.get(
+            word,
+            word
+        )
+
+        if (
+            word
+            and word not in _EVENT_STOPWORDS
+        ):
+            tokens.add(word)
+
+    return tokens
+
+
+def _numbers(text):
     return set(
         re.findall(
-            r"[a-z0-9][a-z0-9'-]*",
-            (text or "").lower()
+            r"\b\d+(?:\.\d+)?%?\b",
+            text or ""
         )
+    )
+
+
+def _material_title_update(new_title, canonical_title):
+    """Detect a concrete event change, not merely different wording."""
+    new_numbers = _numbers(new_title)
+    old_numbers = _numbers(canonical_title)
+
+    # Changed headline figures (for example a rising death toll) are
+    # meaningful even when the rest of the headline is nearly identical.
+    if (
+        new_numbers
+        and old_numbers
+        and new_numbers != old_numbers
+    ):
+        return True
+
+    new_tokens = _tokens(new_title)
+    old_tokens = _tokens(canonical_title)
+
+    return bool(
+        (new_tokens - old_tokens)
+        & _MATERIAL_UPDATE_TERMS
     )
 
 
@@ -125,13 +216,22 @@ def _meaningful_update(
         canonical_summary
     )
 
-    # A substantially different title is potentially
-    # a meaningful development.
+    # High headline similarity across different sources normally means
+    # parallel coverage of the same event, even when each outlet provides
+    # different background in its summary. Do not publish that as an UPDATE
+    # unless the headline itself contains a concrete material change.
+    if title_similarity >= 0.62:
+        return _material_title_update(
+            new_title,
+            canonical_title
+        )
+
+    # For less-similar headlines that still matched the same event, retain
+    # the existing conservative update behavior. This preserves real
+    # developments while suppressing the common cross-source duplicate case.
     if title_similarity < 0.55:
         return True
 
-    # If there is useful summary information and the
-    # summary differs substantially, treat it as an update.
     if (
         new_summary
         and canonical_summary

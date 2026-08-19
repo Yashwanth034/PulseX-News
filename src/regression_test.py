@@ -1,5 +1,7 @@
 import re
+import sqlite3
 
+from src.event_memory import decide, init_events
 from src.formatter import clean as clean_feed_text, format_story, label
 from src.quality import quality_check
 from src.priority import priority
@@ -387,6 +389,127 @@ def test_clean_west_bank_style_context_still_passes():
     assert result["quality_pass"], result
 
 
+def _event_test_db():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE stories(
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            url TEXT,
+            source TEXT,
+            category TEXT,
+            summary TEXT,
+            score INTEGER,
+            confidence TEXT,
+            event_id TEXT,
+            event_status TEXT,
+            first_seen TEXT
+        )
+        """
+    )
+    init_events(conn)
+    return conn
+
+
+def _remember_event_story(conn, item, event_id, status="NEW"):
+    conn.execute(
+        "INSERT INTO stories VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            item.get("id", item["source"]),
+            item["title"],
+            item.get("url", "https://example.com/event"),
+            item["source"],
+            item.get("category", "world"),
+            item.get("summary", ""),
+            item.get("score", 70),
+            item.get("confidence", "medium"),
+            event_id,
+            status,
+            "2026-08-19T00:00:00+00:00",
+        ),
+    )
+
+
+def test_cross_source_fedorov_story_is_duplicate():
+    conn = _event_test_db()
+    try:
+        first = {
+            "id": "fedorov-aljazeera",
+            "title": "Ukraine’s ousted defence minister calls for elections during war",
+            "summary": (
+                "Mykhailo Fedorov's call is first such demand by a major "
+                "Ukrainian political figure since Russia's full-scale invasion."
+            ),
+            "source": "Al Jazeera",
+            "category": "politics",
+            "score": 70,
+            "priority_score": 70,
+        }
+        second = {
+            "id": "fedorov-france24",
+            "title": (
+                "Ukraine's sacked defence minister Fedorov calls for wartime "
+                "presidential elections"
+            ),
+            "summary": (
+                "Fedorov was dismissed last month, sparking days of protests "
+                "across Ukraine."
+            ),
+            "source": "France 24",
+            "category": "politics",
+            "score": 70,
+            "priority_score": 70,
+        }
+
+        first_status, event_id, _ = decide(conn, first)
+        assert first_status == "NEW", first_status
+        _remember_event_story(conn, first, event_id)
+
+        second_status, second_event_id, similarity = decide(conn, second)
+
+        assert second_status == "DUPLICATE", (second_status, similarity)
+        assert second_event_id == event_id
+        assert similarity >= 0.62, similarity
+    finally:
+        conn.close()
+
+
+def test_cross_source_material_change_remains_update():
+    conn = _event_test_db()
+    try:
+        first = {
+            "id": "flood-source-a",
+            "title": "Flood death toll rises to 12 after storms hit region",
+            "summary": "Officials confirmed 12 deaths after severe flooding.",
+            "source": "Source A",
+            "category": "disaster",
+            "score": 80,
+            "priority_score": 80,
+        }
+        update = {
+            "id": "flood-source-b",
+            "title": "Flood death toll rises to 25 after storms hit region",
+            "summary": "Officials now report 25 deaths as rescue work continues.",
+            "source": "Source B",
+            "category": "disaster",
+            "score": 80,
+            "priority_score": 80,
+        }
+
+        first_status, event_id, _ = decide(conn, first)
+        assert first_status == "NEW", first_status
+        _remember_event_story(conn, first, event_id)
+
+        update_status, update_event_id, similarity = decide(conn, update)
+
+        assert update_status == "UPDATE", (update_status, similarity)
+        assert update_event_id == event_id
+        assert similarity >= 0.62, similarity
+    finally:
+        conn.close()
+
+
 def test_month_abbreviation_date_does_not_split_sentence():
     item = _story_for_context(
         "NASA’s LRO Images Falcon 9 Crater on Moon, Learns New Details",
@@ -426,6 +549,8 @@ def main():
     test_guardian_live_navigation_tail_is_removed()
     test_tupac_incomplete_context_is_not_publishable()
     test_clean_west_bank_style_context_still_passes()
+    test_cross_source_fedorov_story_is_duplicate()
+    test_cross_source_material_change_remains_update()
     test_month_abbreviation_date_does_not_split_sentence()
 
     print("REGRESSION TESTS PASSED")
