@@ -3,9 +3,5 @@
   "kill_switch": false,
   "daily_post_count": 34,
   "last_reset_date": "2026-08-23",
-  "recent_post_times": [
-    "2026-08-23T11:23:13.034508+00:00",
-    "2026-08-23T11:23:23.446670+00:00",
-    "2026-08-23T11:23:33.713103+00:00"
-  ]
+  "recent_post_times": []
 }
