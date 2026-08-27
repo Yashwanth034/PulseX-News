@@ -14,6 +14,8 @@ from src.source_reliability import is_discovery
 from src.collector import collect
 from src.quality import quality_check
 from src.priority import priority
+from src.selection import select_balanced_queue
+from src.media import discover_media
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -173,6 +175,10 @@ def fetch():
                 False
             ),
             "summary": s,
+            "media_candidates": item.get(
+                "media_candidates",
+                []
+            ),
             "published_at": item.get(
                 "published_at"
             ),
@@ -262,6 +268,7 @@ def main():
 
     q = []
     held = []
+    eligible = []
 
     # Stories that fail quality are rejected and skipped.
     # They are NOT placed into the held/publish pipeline.
@@ -446,7 +453,79 @@ def main():
             )
 
         # -----------------------------------------------------
-        # Event memory
+        # Eligibility filters before event memory.
+        #
+        # Important: candidates that are good but fall outside the final
+        # per-run capacity are intentionally NOT written to stories/events.
+        # They remain eligible for the next 5-minute collection run.
+        # -----------------------------------------------------
+
+        min_score = (
+            CONFIG["discovery_min_score"]
+            if is_discovery(x)
+            else CONFIG["min_score_to_queue"]
+        )
+
+        if x["score"] < min_score:
+            run_stats["below_score"] += 1
+            below_score_stories.append({
+                "title": x.get("title", ""),
+                "score": x.get("score", 0),
+                "required_score": min_score,
+                "category": x.get("category", ""),
+                "source": x.get("source", ""),
+                "confidence": x.get("confidence", ""),
+                "priority_level": x.get("priority_level", ""),
+            })
+            continue
+
+        if (
+            is_discovery(x)
+            and x.get("strong_corroboration", 0) < 1
+            and not x.get("primary_source")
+        ):
+            x["hold_reason"] = (
+                "Discovery lead awaiting independent confirmation"
+            )
+            held.append(x)
+            run_stats["discovery_held"] += 1
+            continue
+
+        if x["confidence"] == "low" and x["tier"] >= 3:
+            run_stats["low_confidence_rejected"] += 1
+            continue
+
+        eligible.append(x)
+
+    # ---------------------------------------------------------
+    # Balanced final-candidate order.
+    #
+    # The first available slots prefer distinct categories and sources,
+    # while verified IMMEDIATE stories remain first. The complete ordered
+    # candidate list is retained so duplicates/quality failures can be
+    # skipped and replaced without starving other sectors.
+    # ---------------------------------------------------------
+
+    balanced_candidates = select_balanced_queue(
+        eligible,
+        len(eligible),
+    )
+
+    run_stats["eligible_after_filters"] = len(eligible)
+    run_stats["processed_for_queue"] = 0
+    run_stats["deferred_by_run_limit"] = 0
+
+    max_stories = CONFIG["max_stories_per_run"]
+
+    for x in balanced_candidates:
+        if len(q) >= max_stories:
+            break
+
+        run_stats["processed_for_queue"] += 1
+
+        # -----------------------------------------------------
+        # Event memory is consumed only for candidates actually needed to
+        # fill this run. Deferred candidates remain unseen for the next run.
         # -----------------------------------------------------
 
         status, eid, _ = decide(
@@ -459,16 +538,9 @@ def main():
         x["event_status"] = status
         x["event_id"] = eid
 
-        # -----------------------------------------------------
-        # Store story
-        #
-        # IMPORTANT:
-        # Store the story BEFORE quality checking.
-        #
-        # This means a rejected quality story is remembered
-        # and will not be treated as a brand-new story again.
-        # -----------------------------------------------------
-
+        # Store candidates that were actually evaluated by event memory.
+        # This preserves duplicate/quality-rejection memory without falsely
+        # consuming candidates that were merely outside this run's capacity.
         c.execute(
             "INSERT OR REPLACE INTO stories VALUES "
             "(?,?,?,?,?,?,?,?,?,?,?)",
@@ -487,110 +559,9 @@ def main():
             )
         )
 
-        # -----------------------------------------------------
-        # Duplicate
-        # -----------------------------------------------------
-
         if status == "DUPLICATE":
-
-            run_stats[
-                "duplicates"
-            ] += 1
-
+            run_stats["duplicates"] += 1
             continue
-
-        # -----------------------------------------------------
-        # Minimum score
-        # -----------------------------------------------------
-
-        min_score = (
-            CONFIG["discovery_min_score"]
-            if is_discovery(x)
-            else CONFIG["min_score_to_queue"]
-        )
-
-        if x["score"] < min_score:
-
-            run_stats[
-                "below_score"
-            ] += 1
-
-            below_score_stories.append({
-                "title": x.get(
-                    "title",
-                    ""
-                ),
-                "score": x.get(
-                    "score",
-                    0
-                ),
-                "required_score": min_score,
-                "category": x.get(
-                    "category",
-                    ""
-                ),
-                "source": x.get(
-                    "source",
-                    ""
-                ),
-                "confidence": x.get(
-                    "confidence",
-                    ""
-                ),
-                "priority_level": x.get(
-                    "priority_level",
-                    ""
-                ),
-            })
-
-            continue
-
-        # -----------------------------------------------------
-        # Discovery verification
-        # -----------------------------------------------------
-
-        if (
-            is_discovery(x)
-            and x.get(
-                "strong_corroboration",
-                0
-            ) < 1
-            and not x.get(
-                "primary_source"
-            )
-        ):
-
-            x["hold_reason"] = (
-                "Discovery lead awaiting "
-                "independent confirmation"
-            )
-
-            held.append(x)
-
-            run_stats[
-                "discovery_held"
-            ] += 1
-
-            continue
-
-        # -----------------------------------------------------
-        # Low-confidence rejection
-        # -----------------------------------------------------
-
-        if (
-            x["confidence"] == "low"
-            and x["tier"] >= 3
-        ):
-
-            run_stats[
-                "low_confidence_rejected"
-            ] += 1
-
-            continue
-
-        # -----------------------------------------------------
-        # Formatting
-        # -----------------------------------------------------
 
         x.update(
             format_story(
@@ -599,77 +570,42 @@ def main():
             )
         )
 
-        # -----------------------------------------------------
-        # Quality
-        # -----------------------------------------------------
-
         x.update(
             quality_check(x)
         )
 
-        # -----------------------------------------------------
-        # QUALITY FAILURE
-        #
-        # IMPORTANT FIX:
-        #
-        # DO NOT put failed stories into "held".
-        #
-        # They are rejected and skipped.
-        # Good stories continue processing.
-        # -----------------------------------------------------
-
         if not x["quality_pass"]:
-
-            run_stats[
-                "quality_failed"
-            ] += 1
-
-            run_stats[
-                "quality_rejected"
-            ] += 1
-
+            run_stats["quality_failed"] += 1
+            run_stats["quality_rejected"] += 1
             quality_rejected.append({
                 "id": x.get("id"),
                 "title": x.get("title"),
                 "source": x.get("source"),
-                "quality_errors": x.get(
-                    "quality_errors",
-                    []
-                ),
+                "quality_errors": x.get("quality_errors", []),
             })
 
             print(
                 "QUALITY REJECTED:",
                 x.get("title", ""),
                 "|",
-                x.get(
-                    "quality_errors",
-                    []
-                )
+                x.get("quality_errors", [])
             )
-
-            # IMPORTANT:
-            # No held.append(x)
-            # No q.append(x)
-            # No mark_queued()
-            #
-            # Simply move to the next story.
             continue
 
-        # -----------------------------------------------------
-        # Queue only quality-passed stories.
-        # -----------------------------------------------------
+        # Discover publisher-provided media only for stories that are truly
+        # going into the final queue. Failure is intentionally text-only.
+        media = discover_media(x, timeout=5)
+        if media:
+            x["media"] = media
 
         q.append(x)
+        mark_queued(c, eid)
+        run_stats["queued_before_limit"] += 1
 
-        mark_queued(
-            c,
-            eid
-        )
-
-        run_stats[
-            "queued_before_limit"
-        ] += 1
+    run_stats["deferred_by_run_limit"] = max(
+        0,
+        len(balanced_candidates) - run_stats["processed_for_queue"]
+    )
 
     # ---------------------------------------------------------
     # Commit database changes
@@ -678,35 +614,9 @@ def main():
     c.commit()
     c.close()
 
-    # ---------------------------------------------------------
-    # Sort queue by priority
-    # ---------------------------------------------------------
-
-    q.sort(
-        key=lambda x: (
-            x.get(
-                "priority_level"
-            ) == "IMMEDIATE",
-
-            x.get(
-                "priority_score",
-                0
-            ),
-
-            x["event_status"] == "UPDATE",
-
-            x["confidence"] == "high",
-        ),
-        reverse=True,
-    )
-
-    # ---------------------------------------------------------
-    # Apply maximum stories per run
-    # ---------------------------------------------------------
-
-    q = q[
-        :CONFIG["max_stories_per_run"]
-    ]
+    # q is already balanced, quality-passed, and bounded while event memory
+    # is consumed. Do not sort/truncate it again here, because that would
+    # defeat sector diversity and could consume stories that were never used.
 
     # ---------------------------------------------------------
     # Write queue

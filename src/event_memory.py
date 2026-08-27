@@ -50,6 +50,23 @@ _EVENT_ALIASES = {
     "sacked": "removed",
     "ousted": "removed",
     "dismissed": "removed",
+    "ukrainian": "ukraine",
+    "russian": "russia",
+    "algerian": "algeria",
+}
+
+_WEAK_EVENT_TOKENS = {
+    "again", "latest", "least", "more", "new", "news", "report", "reported",
+    "say", "says", "said", "people", "person", "official", "officials",
+    "through", "come", "comes", "coming", "dead", "die", "died", "kill",
+    "killed", "injure", "injured", "hit", "hits",
+}
+
+_EVENT_SIGNAL_TOKENS = {
+    "attack", "airstrike", "blast", "ceasefire", "collapse", "coup", "crash",
+    "drone", "earthquake", "eruption", "explosion", "fire", "flood",
+    "hurricane", "invasion", "missile", "outbreak", "recall", "strike",
+    "tsunami", "wildfire", "war",
 }
 
 _MATERIAL_UPDATE_TERMS = {
@@ -119,12 +136,13 @@ def _material_title_update(new_title, canonical_title):
     new_numbers = _numbers(new_title)
     old_numbers = _numbers(canonical_title)
 
-    # Changed headline figures (for example a rising death toll) are
-    # meaningful even when the rest of the headline is nearly identical.
+    # A genuinely new figure (for example a rising death toll) is meaningful.
+    # Merely omitting an older headline figure is not an update; otherwise a
+    # shorter parallel headline can be reposted after a more detailed one.
     if (
         new_numbers
         and old_numbers
-        and new_numbers != old_numbers
+        and (new_numbers - old_numbers)
     ):
         return True
 
@@ -147,6 +165,42 @@ def _sim(a, b):
     return len(aa & bb) / max(
         1,
         len(aa | bb)
+    )
+
+
+def _anchor_match(a, b):
+    """Detect the same event when outlets use substantially different wording.
+
+    We require at least two meaningful shared anchors and either a shared event
+    signal (attack/wildfire/etc.) or an identical numeric fact. This is much
+    narrower than lowering the global Jaccard threshold and avoids merging
+    unrelated stories merely because they share a country or generic verb.
+    """
+    aa = _tokens(a)
+    bb = _tokens(b)
+    shared = {
+        token for token in (aa & bb)
+        if token not in _WEAK_EVENT_TOKENS
+        and not token.isdigit()
+    }
+
+    if len(shared) < 2:
+        return False
+
+    shared_signal = bool(shared & _EVENT_SIGNAL_TOKENS)
+    shared_numbers = bool(_numbers(a) & _numbers(b))
+
+    # At least one shared token must be a reasonably distinctive anchor rather
+    # than only generic incident vocabulary.
+    distinctive = {
+        token for token in shared
+        if token not in _EVENT_SIGNAL_TOKENS
+        and len(token) >= 4
+    }
+
+    return (
+        (shared_numbers and bool(distinctive))
+        or (shared_signal and len(distinctive) >= 2)
     )
 
 
@@ -216,11 +270,14 @@ def _meaningful_update(
         canonical_summary
     )
 
-    # High headline similarity across different sources normally means
-    # parallel coverage of the same event, even when each outlet provides
-    # different background in its summary. Do not publish that as an UPDATE
-    # unless the headline itself contains a concrete material change.
-    if title_similarity >= 0.62:
+    # High headline similarity or a strong entity/topic anchor across different
+    # sources normally means parallel coverage of the same event, even when the
+    # wording differs substantially. Publish only when the incoming headline
+    # carries a concrete new fact, not merely a different phrasing.
+    if (
+        title_similarity >= 0.62
+        or _anchor_match(new_title, canonical_title)
+    ):
         return _material_title_update(
             new_title,
             canonical_title
@@ -268,6 +325,8 @@ def decide(
 
     best = None
     best_sim = 0.0
+    best_anchor = False
+    best_strength = 0.0
 
     for row in rows:
         (
@@ -301,13 +360,21 @@ def decide(
         ).total_seconds() > hours * 3600:
             continue
 
+        incoming_title = item.get("title", "")
         sim = _sim(
-            item.get("title", ""),
+            incoming_title,
             canonical
         )
+        anchored = _anchor_match(
+            incoming_title,
+            canonical
+        )
+        strength = sim + (0.35 if anchored else 0.0)
 
-        if sim > best_sim:
+        if strength > best_strength:
+            best_strength = strength
             best_sim = sim
+            best_anchor = anchored
             best = row
 
     # ---------------------------------------------------------
@@ -315,7 +382,10 @@ def decide(
     # ---------------------------------------------------------
     if (
         not best
-        or best_sim < 0.42
+        or (
+            best_sim < 0.45
+            and not best_anchor
+        )
     ):
         event_id = _new_id(
             item.get("title", "")

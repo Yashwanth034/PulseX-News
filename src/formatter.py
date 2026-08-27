@@ -166,6 +166,16 @@ def strip_feed_boilerplate(text):
         flags=re.IGNORECASE,
     )
 
+    # Some broadcast feeds prepend a presenter/guest introduction before the
+    # actual report. Remove only a proper-name-led "is pleased to welcome"
+    # sentence and keep the substantive sentences that follow.
+    text = re.sub(
+        r"^(?:[A-Z][A-Za-z'’.-]+(?:\s+[A-Z][A-Za-z'’.-]+){0,3})\s+"
+        r"is\s+pleased\s+to\s+welcome\b[^.!?]*[.!?]\s*",
+        "",
+        text,
+    )
+
     # NASA APOD feeds can expose a navigation-card summary rather than
     # article prose. Publishing that metadata is worse than holding the
     # story for lack of usable context.
@@ -185,6 +195,8 @@ def strip_feed_boilerplate(text):
         r"\bContinue\s+reading\b",
         r"\bSign\s+up\s+to\s+our\s+newsletter\b",
         r"\bSubscribe\s+to\s+our\s+newsletter\b",
+        r"\bFollow\s+our\s+liveblog\s+for\s+the\s+latest\s+updates\b",
+        r"\bWe\s+are\s+aiming,?\s+of\s+course,?\s+to\s+inform\s+public\s+policy\s+debate\b",
         r"\b(?:(?-i:[A-Z])[A-Za-z]+(?:\s+[A-Za-z]+){0,4})\s+live\s+[–-]\s+latest\s+updates\b",
     ]
 

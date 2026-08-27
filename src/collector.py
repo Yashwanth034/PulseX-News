@@ -65,6 +65,54 @@ def effective_entry_time(entry):
     return published_at or updated_at
 
 
+def extract_entry_media(entry):
+    """Collect publisher-provided RSS/Atom media candidates without downloading."""
+    candidates = []
+    seen = set()
+
+    def add(url, content_type=""):
+        url = (url or "").strip()
+        if (
+            not url
+            or url in seen
+            or not url.startswith(("http://", "https://"))
+        ):
+            return
+
+        seen.add(url)
+        candidates.append({
+            "url": url,
+            "type": (content_type or "").strip().lower(),
+        })
+
+    for media in entry.get("media_content", []) or []:
+        add(
+            media.get("url"),
+            media.get("type") or media.get("medium")
+        )
+
+    for media in entry.get("media_thumbnail", []) or []:
+        add(
+            media.get("url"),
+            media.get("type") or "image/jpeg"
+        )
+
+    for enclosure in entry.get("enclosures", []) or []:
+        add(
+            enclosure.get("href") or enclosure.get("url"),
+            enclosure.get("type")
+        )
+
+    for link in entry.get("links", []) or []:
+        if (link.get("rel") or "").lower() == "enclosure":
+            add(
+                link.get("href"),
+                link.get("type")
+            )
+
+    return candidates[:8]
+
+
 def is_recent(dt, max_age_hours=48):
     if dt is None:
         return False
@@ -172,6 +220,8 @@ def fetch_one(
                     ),
 
                     "summary": summary[:700],
+
+                    "media_candidates": extract_entry_media(e),
 
                     "published_at": (
                         published_at.isoformat()

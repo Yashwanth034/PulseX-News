@@ -100,6 +100,9 @@ def has_rss_junk(text):
         r"\btoday[’']s apod\b",
         r"\barchive submissions index search calendar rss\b",
         r"\bdiscover the cosmos\b",
+        r"\bfollow our liveblog for the latest updates\b",
+        r"\bis pleased to welcome\b",
+        r"\bwe are aiming,? of course,? to inform public policy debate\b",
     ]
 
     for pattern in junk_patterns:

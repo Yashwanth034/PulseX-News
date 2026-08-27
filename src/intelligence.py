@@ -46,11 +46,16 @@ CATEGORY_TERMS = {
         "ceasefire", "coup", "military"
     },
 
+    "cybersecurity": {
+        "cybersecurity", "cyberattack", "data breach", "ransomware",
+        "malware", "vulnerability", "vulnerabilities", "hacker", "hackers",
+        "hacking", "phishing", "zero-day"
+    },
+
     "technology": {
         "technology", "ai", "artificial intelligence", "chip",
-        "semiconductor", "software", "cybersecurity",
-        "cyberattack", "data breach", "robot",
-        "drone", "drones"
+        "semiconductor", "software", "robot", "robotics", "app", "apps",
+        "startup", "startups", "platform", "algorithm"
     },
 
     "science": {
@@ -65,8 +70,16 @@ CATEGORY_TERMS = {
     },
 
     "health": {
-        "health", "disease", "virus", "outbreak", "hospital",
-        "who", "vaccine", "pandemic"
+        "health", "disease", "virus", "outbreak", "hospital", "hospitals",
+        "who", "vaccine", "pandemic", "malnutrition", "nutrition", "medical",
+        "medicine", "patient", "patients", "cancer", "malaria", "cholera",
+        "measles", "mpox", "mental health", "public health"
+    },
+
+    "crime": {
+        "police", "rape", "raped", "murder", "murdered", "homicide",
+        "kidnap", "kidnapped", "kidnapping", "robbery", "suspect", "suspects",
+        "arrested", "charged", "gang", "gangs"
     },
 
     "environment": {
@@ -84,13 +97,33 @@ CATEGORY_TERMS = {
 
     "sports": {
         "football", "soccer", "cricket", "tennis", "basketball",
-        "baseball", "golf", "formula 1", "f1", "olympics",
-        "athlete", "championship", "tournament", "league"
+        "baseball", "golf", "formula 1", "f1", "olympics", "athlete",
+        "athletes", "championship", "tournament", "league", "player",
+        "players", "coach", "club", "match", "goal", "goals", "season",
+        "cup", "pfa", "uefa", "fifa", "premier league", "golden boot",
+        "referee", "transfer"
+    },
+
+    "entertainment": {
+        "film", "movie", "movies", "cinema", "actor", "actors", "actress",
+        "singer", "music", "album", "television", "tv series", "streaming",
+        "box office", "director", "directors"
     },
 }
 
 def _words(text):
     return set(re.findall(r"[a-z0-9][a-z0-9'-]*", (text or "").lower()))
+
+
+def _term_present(text, term):
+    """Match a topic term as a word/phrase, never as an arbitrary substring."""
+    return bool(
+        re.search(
+            r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])",
+            (text or "").lower(),
+        )
+    )
+
 
 def _category(text, source_category):
     raw = (source_category or "").lower().strip()
@@ -122,15 +155,17 @@ def _category(text, source_category):
     for category, terms in CATEGORY_TERMS.items():
         scores[category] = sum(
             1 for term in terms
-            if term in lower
+            if _term_present(lower, term)
         )
 
     best_category = max(scores, key=scores.get)
     best_score = scores[best_category]
 
-    # A regional/source label should never become the article topic.
+    # A regional/source label should never become the article topic. One
+    # boundary-matched topical signal is enough; requiring two pushed obvious
+    # sports/health/crime stories into the generic world bucket.
     if raw in regional_categories:
-        if best_score >= 2:
+        if best_score >= 1:
             return best_category
         return "world"
 
@@ -152,7 +187,7 @@ def classify(title, summary, source_category, item=None):
     item = item or {}
     text = f"{title} {summary}".lower()
     category = _category(text, source_category)
-    urgency_hits = [term for term in URGENT_TERMS if term in text]
+    urgency_hits = [term for term in URGENT_TERMS if _term_present(text, term)]
     base = 35 + min(25, len(urgency_hits) * 8)
     base += reliability_bonus(item)
     if item.get("primary_source"):

@@ -1,3 +1,6 @@
+import re
+
+
 IMMEDIATE_TERMS = {
     "earthquake": 35,
     "tsunami": 40,
@@ -51,6 +54,22 @@ WATCH_TERMS = {
 }
 
 
+def _term_present(text, term):
+    """Match urgency terms as complete words/phrases, not substrings.
+
+    This prevents false positives such as `war` inside `Howard` or `software`,
+    while still accepting ordinary plurals such as attacks/wildfires/alerts.
+    """
+    escaped = re.escape(term.lower())
+    suffix = "" if term.endswith("s") or " " in term else r"(?:s|es)?"
+    return bool(
+        re.search(
+            r"(?<![a-z0-9])" + escaped + suffix + r"(?![a-z0-9])",
+            (text or "").lower(),
+        )
+    )
+
+
 def priority(item):
     text = (
         item.get("title", "") + " " + item.get("summary", "")
@@ -58,12 +77,12 @@ def priority(item):
 
     immediate = sum(
         value for term, value in IMMEDIATE_TERMS.items()
-        if term in text
+        if _term_present(text, term)
     )
 
     watch = sum(
         value for term, value in WATCH_TERMS.items()
-        if term in text
+        if _term_present(text, term)
     )
 
     base_score = item.get("score", 0)
@@ -102,7 +121,15 @@ def priority(item):
         score >= 75
         and confidence in {"high", "medium"}
         and (primary or strong >= 1)
+        and (
+            immediate > 0
+            or watch > 0
+            or bool(item.get("urgency_terms"))
+        )
     ):
+        # Reliability can make an authoritative routine story score highly,
+        # but URGENT still requires an actual event/watch signal. This keeps
+        # ordinary NASA personnel/science posts from being treated like crises.
         level = "URGENT"
         max_delay = 15
 

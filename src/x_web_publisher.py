@@ -1,8 +1,10 @@
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 
+from src.media import download_media
 from src.x_publisher import XPublisher, XPublisherError
 
 
@@ -39,6 +41,15 @@ LOGIN_BUTTON = '[data-testid="LoginForm_Login_Button"]'
 LOGIN_BUTTON_FALLBACK = 'button svg[data-icon="icon-arrow-right"]'
 CHALLENGE_INPUT = 'input[name="challenge_response"]'
 COMPOSER_TEXTAREA = '[data-testid="tweetTextarea_0"]'
+MEDIA_FILE_INPUT = (
+    'input[data-testid="fileInput"], '
+    'input[type="file"][accept*="image"], '
+    'input[type="file"][accept*="video"]'
+)
+MEDIA_PREVIEW = (
+    '[data-testid="attachments"], '
+    '[data-testid="mediaContainer"]'
+)
 THREAD_ADD_BUTTON = '[data-testid="createThreadButton"]'
 THREAD_ADD_BUTTON_FALLBACK = 'button[aria-label="Add another tweet"]'
 POST_BUTTON = '[data-testid="tweetButton"]'
@@ -233,6 +244,40 @@ class _WebComposer:
         textarea.click()
         self.page.keyboard.type(text)
 
+    def _attach_media(self, media_path):
+        """Attach one local image/video. Any failure returns False for text fallback."""
+        if not media_path:
+            return False
+
+        file_input = None
+        try:
+            file_input = self.page.locator(MEDIA_FILE_INPUT).first
+            if file_input.count() == 0:
+                return False
+
+            file_input.set_input_files(media_path)
+
+            # Prefer an explicit preview marker when X exposes one. The file
+            # input check keeps this resilient to harmless test-id changes.
+            try:
+                self.page.wait_for_selector(MEDIA_PREVIEW, timeout=12000)
+            except Exception:
+                selected = file_input.evaluate(
+                    "el => Boolean(el.files && el.files.length > 0)"
+                )
+                if not selected:
+                    return False
+                self.page.wait_for_timeout(1800)
+
+            return True
+        except Exception:
+            if file_input is not None:
+                try:
+                    file_input.set_input_files([])
+                except Exception:
+                    pass
+            return False
+
     def _click_post(self):
         button = self.page.locator(POST_BUTTON)
         if button.count() == 0:
@@ -248,19 +293,22 @@ class _WebComposer:
         except Exception:
             return None
 
-    def post_single(self, text):
+    def post_single(self, text, media_path=None):
         self._open_composer()
         self._type_text(text)
+        media_attached = self._attach_media(media_path)
         self._click_post()
         tweet_id = self._tweet_id_from_toast()
         return {
             "web": True,
             "text": text,
             "tweet_id": tweet_id,
+            "media_attached": media_attached,
         }
 
-    def post_thread(self, texts):
+    def post_thread(self, texts, media_path=None):
         self._open_composer()
+        media_attached = False
         for index, text in enumerate(texts):
             if index > 0:
                 add = self.page.locator(THREAD_ADD_BUTTON)
@@ -269,13 +317,16 @@ class _WebComposer:
                 add.click()
                 self.page.wait_for_timeout(800)
             self._type_text(text)
+            if index == 0:
+                media_attached = self._attach_media(media_path)
         self._click_post()
         results = []
-        for text in texts:
+        for index, text in enumerate(texts):
             results.append(
                 {
                     "web": True,
                     "text": text,
+                    "media_attached": bool(media_attached and index == 0),
                 }
             )
         return results
@@ -379,7 +430,15 @@ class XWebPublisher(XPublisher):
             )
             try:
                 composer.ensure_logged_in()
-                result = composer.post_single(text)
+                with tempfile.TemporaryDirectory(prefix="pulsex-media-") as media_dir:
+                    media_path = download_media(
+                        item.get("media"),
+                        directory=media_dir,
+                    )
+                    result = composer.post_single(
+                        text,
+                        media_path=media_path,
+                    )
             except Exception as exc:
                 if isinstance(exc, XPublisherError):
                     raise
@@ -417,7 +476,15 @@ class XWebPublisher(XPublisher):
         )
         try:
             composer.ensure_logged_in()
-            results = composer.post_thread(thread)
+            with tempfile.TemporaryDirectory(prefix="pulsex-media-") as media_dir:
+                media_path = download_media(
+                    item.get("media"),
+                    directory=media_dir,
+                )
+                results = composer.post_thread(
+                    thread,
+                    media_path=media_path,
+                )
         except Exception as exc:
             if isinstance(exc, XPublisherError):
                 raise
