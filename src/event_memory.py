@@ -66,7 +66,7 @@ _EVENT_SIGNAL_TOKENS = {
     "attack", "airstrike", "blast", "ceasefire", "collapse", "coup", "crash",
     "drone", "earthquake", "eruption", "explosion", "fire", "flood",
     "hurricane", "invasion", "missile", "outbreak", "recall", "strike",
-    "tsunami", "wildfire", "war",
+    "tsunami", "wildfire", "war", "heist", "robbery", "theft",
 }
 
 _MATERIAL_UPDATE_TERMS = {
@@ -76,7 +76,7 @@ _MATERIAL_UPDATE_TERMS = {
     "rejected", "sign", "signed", "launch", "launched", "strike",
     "strikes", "withdraw", "withdrew", "reopen", "reopened", "close",
     "closed", "raise", "raised", "rise", "rises", "increase", "increased",
-    "cut", "cuts", "win", "wins", "won", "lose", "loses", "lost",
+    "cut", "cuts",
 }
 
 
@@ -86,6 +86,11 @@ def _tokens(text):
         "NFKC",
         text or ""
     ).replace("’", "'").lower()
+
+    # Treat hyphenated place/event phrases as ordinary words for matching.
+    # This lets `Nepal-Tibet floods` align with `Nepal and Tibet ... floods`
+    # without weakening thresholds for unrelated events.
+    normalized = re.sub(r"[-‐‑‒–—]+", " ", normalized)
 
     tokens = set()
 
@@ -204,6 +209,30 @@ def _anchor_match(a, b):
     )
 
 
+def _combined_anchor_match(item, canonical_title, canonical_summary):
+    """Compare event anchors across headline + explanatory context.
+
+    Headline-only matching can fragment one major event when one outlet leads
+    with impact figures while another leads with imagery, rescue work, or the
+    cause. Context is used only through the existing conservative anchor rule.
+    """
+    incoming = " ".join(
+        part for part in (
+            item.get("title", ""),
+            item.get("summary", ""),
+        )
+        if part
+    )
+    canonical = " ".join(
+        part for part in (
+            canonical_title,
+            canonical_summary,
+        )
+        if part
+    )
+    return _anchor_match(incoming, canonical)
+
+
 def _new_id(title):
     return hashlib.sha256(
         title.strip().lower().encode()
@@ -241,7 +270,8 @@ def _same_event_source(
 def _meaningful_update(
     item,
     canonical_title,
-    canonical_summary
+    canonical_summary,
+    event_anchor=False,
 ):
     """
     Determine whether the incoming story contains
@@ -276,6 +306,7 @@ def _meaningful_update(
     # carries a concrete new fact, not merely a different phrasing.
     if (
         title_similarity >= 0.62
+        or event_anchor
         or _anchor_match(new_title, canonical_title)
     ):
         return _material_title_update(
@@ -365,9 +396,16 @@ def decide(
             incoming_title,
             canonical
         )
-        anchored = _anchor_match(
-            incoming_title,
-            canonical
+        anchored = (
+            _anchor_match(
+                incoming_title,
+                canonical
+            )
+            or _combined_anchor_match(
+                item,
+                canonical,
+                canonical_summary,
+            )
         )
         strength = sim + (0.35 if anchored else 0.0)
 
@@ -502,7 +540,8 @@ def decide(
     if _meaningful_update(
         item,
         canonical,
-        canonical_summary
+        canonical_summary,
+        event_anchor=best_anchor,
     ):
         conn.execute(
             """

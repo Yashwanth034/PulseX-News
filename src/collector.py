@@ -13,6 +13,22 @@ def clean(t):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def clean_title(text):
+    """Normalize a feed headline and drop a known multi-story title tail.
+
+    Some news-briefing feeds concatenate two unrelated headlines as
+    `First story. And, second story`. The summary then describes only the
+    first story, so keeping the second headline makes the public post misleading.
+    """
+    title = clean(text)
+    return re.split(
+        r"\.\s+And,\s+",
+        title,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+
+
 def parse_entry_time(entry, key):
     value = entry.get(key)
 
@@ -63,6 +79,13 @@ def effective_entry_time(entry):
         )
 
     return published_at or updated_at
+
+
+def extract_alert_level(entry):
+    """Extract an explicit Green/Orange/Red alert prefix when a feed supplies it."""
+    title = clean(entry.get("title", ""))
+    match = re.match(r"^(green|orange|red)\b", title, flags=re.IGNORECASE)
+    return match.group(1).lower() if match else None
 
 
 def extract_entry_media(entry):
@@ -138,6 +161,17 @@ def fetch_one(
             feed["url"]
         )
 
+        # Retry once only when the first network/parse attempt yielded no
+        # entries. This recovers brief DNS/socket/CDN timeouts without adding
+        # duplicate requests for healthy sources or hiding persistent failures.
+        if (
+            getattr(parsed, "bozo", False)
+            and not parsed.entries
+        ):
+            parsed = feedparser.parse(
+                feed["url"]
+            )
+
         rows = []
         error = None
 
@@ -153,11 +187,30 @@ def fetch_one(
                 )
             )
 
-        for e in parsed.entries[:limit]:
+        try:
+            entry_limit = max(1, min(1000, int(feed.get("max_entries", limit))))
+        except (TypeError, ValueError):
+            entry_limit = limit
 
-            title = clean(
+        allowed_alert_levels = {
+            str(level).strip().lower()
+            for level in feed.get("allowed_alert_levels", [])
+            if str(level).strip()
+        }
+
+        for e in parsed.entries[:entry_limit]:
+
+            title = clean_title(
                 e.get("title", "")
             )
+
+            alert_level = extract_alert_level(e)
+
+            if (
+                allowed_alert_levels
+                and alert_level not in allowed_alert_levels
+            ):
+                continue
 
             url = e.get(
                 "link",
@@ -220,6 +273,8 @@ def fetch_one(
                     ),
 
                     "summary": summary[:700],
+
+                    "alert_level": alert_level,
 
                     "media_candidates": extract_entry_media(e),
 

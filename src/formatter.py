@@ -1,6 +1,8 @@
 import html
 import re
 
+from src.emergency import is_verified_major_disaster
+
 POST_LIMIT = 270
 
 DANGLING_END_WORDS = {
@@ -97,6 +99,26 @@ def label(item, breaking_min_score=75):
     if status == "UPDATE":
         return "🔴 UPDATE"
 
+    verified = (
+        primary
+        or corroboration >= 1
+    )
+
+    # A verified major disaster is breaking even when a terse feed summary
+    # keeps its generic article score below the normal breaking threshold.
+    if is_verified_major_disaster(item):
+        return "🚨 BREAKING"
+
+    # Priority intelligence is stricter than the generic article score. Once
+    # an event is independently verified as IMMEDIATE, do not downgrade its
+    # public label merely because the generic score is under 75.
+    if (
+        item.get("priority_level") == "IMMEDIATE"
+        and confidence in {"high", "medium"}
+        and verified
+    ):
+        return "🚨 BREAKING"
+
     urgent_categories = {
         "conflict",
         "disaster",
@@ -113,11 +135,6 @@ def label(item, breaking_min_score=75):
     # One strong independent corroborating source plus the original
     # report is sufficient verification for a breaking label. Primary
     # sources remain independently eligible.
-    verified = (
-        primary
-        or corroboration >= 1
-    )
-
     if (
         score >= breaking_min_score
         and confidence in {"high", "medium"}
@@ -196,6 +213,7 @@ def strip_feed_boilerplate(text):
         r"\bSign\s+up\s+to\s+our\s+newsletter\b",
         r"\bSubscribe\s+to\s+our\s+newsletter\b",
         r"\bFollow\s+our\s+liveblog\s+for\s+the\s+latest\s+updates\b",
+        r"\b(?:UN\s+News\s+)?app\s+users\s+can\s+follow\s+here\b",
         r"\bWe\s+are\s+aiming,?\s+of\s+course,?\s+to\s+inform\s+public\s+policy\s+debate\b",
         r"\b(?:(?-i:[A-Z])[A-Za-z]+(?:\s+[A-Za-z]+){0,4})\s+live\s+[–-]\s+latest\s+updates\b",
     ]

@@ -3,8 +3,8 @@ from collections import Counter
 from src.source_reliability import reliability_bonus, get_tier
 
 URGENT_TERMS = {
-    "earthquake","tsunami","hurricane","cyclone","tornado","wildfire",
-    "volcano","eruption","evacuation","missile","airstrike","invasion",
+    "earthquake","tsunami","hurricane","cyclone","tornado","flood","wildfire",
+    "volcano","eruption","landslide","evacuation","missile","airstrike","invasion",
     "explosion","plane crash","train crash","bridge collapse","coup",
     "market crash","bank failure","default","state of emergency",
     "data breach","cyberattack","terror attack"
@@ -55,7 +55,8 @@ CATEGORY_TERMS = {
     "technology": {
         "technology", "ai", "artificial intelligence", "chip",
         "semiconductor", "software", "robot", "robotics", "app", "apps",
-        "startup", "startups", "platform", "algorithm"
+        "startup", "startups", "platform", "algorithm", "game", "gaming",
+        "gamer", "console", "playstation", "xbox", "digital media"
     },
 
     "science": {
@@ -107,7 +108,8 @@ CATEGORY_TERMS = {
     "entertainment": {
         "film", "movie", "movies", "cinema", "actor", "actors", "actress",
         "singer", "music", "album", "television", "tv series", "streaming",
-        "box office", "director", "directors"
+        "box office", "director", "directors", "art", "contemporary art", "artist",
+        "artists", "artwork", "museum", "gallery", "exhibition"
     },
 }
 
@@ -116,10 +118,16 @@ def _words(text):
 
 
 def _term_present(text, term):
-    """Match a topic term as a word/phrase, never as an arbitrary substring."""
+    """Match a topic term as a word/phrase, never as an arbitrary substring.
+
+    Single-word topic terms accept ordinary plural forms, so `flood` also
+    recognizes `floods` without returning to unsafe substring matching.
+    """
+    escaped = re.escape(term.lower())
+    suffix = "" if term.endswith("s") or " " in term else r"(?:s|es)?"
     return bool(
         re.search(
-            r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])",
+            r"(?<![a-z0-9])" + escaped + suffix + r"(?![a-z0-9])",
             (text or "").lower(),
         )
     )
@@ -211,6 +219,79 @@ def _similarity(a, b):
     if not aa or not bb:
         return 0.0
     return len(aa & bb) / max(1, len(aa | bb))
+
+
+DISASTER_EVENT_TERMS = {
+    "earthquake", "tsunami", "hurricane", "cyclone", "tornado", "flood",
+    "wildfire", "volcano", "eruption", "landslide", "evacuation",
+}
+
+DISASTER_GENERIC_TOKENS = {
+    "after", "before", "dead", "deadly", "death", "deaths", "kill", "killed",
+    "missing", "injured", "people", "person", "rescue", "rescues", "teams",
+    "flood", "floods", "wildfire", "wildfires", "earthquake", "earthquakes",
+    "flash", "major", "severe", "catastrophic", "disaster", "disasters",
+    "border", "region", "area", "city", "town", "village", "country",
+    "cause", "caused", "causes", "damage", "destruction", "reported",
+    "reports", "report", "latest", "update", "updates", "least", "nearly",
+    "more", "than", "over", "hundreds", "thousands", "scores", "the",
+    "and", "for", "from", "with", "into", "that", "this", "what", "why",
+    "how", "are", "was", "were", "has", "have", "had", "its", "their",
+}
+
+
+def _plain_tokens(text):
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+DIRECTION_GROUPS = (
+    ({"north", "northern"}, {"south", "southern"}),
+    ({"east", "eastern"}, {"west", "western"}),
+)
+
+
+def _opposing_geography(a, b):
+    a_tokens = _plain_tokens(a)
+    b_tokens = _plain_tokens(b)
+    return any(
+        (a_tokens & left and b_tokens & right)
+        or (a_tokens & right and b_tokens & left)
+        for left, right in DIRECTION_GROUPS
+    )
+
+
+def _disaster_corroboration_anchor(item, other):
+    """Match differently worded reports of the same disaster conservatively.
+
+    Generic Jaccard title similarity misses headlines such as two outlets both
+    covering the Nepal-Tibet floods with very different wording. For an item
+    already classified as a disaster, require the same concrete disaster type
+    plus at least two shared non-generic title tokens (normally place names).
+    """
+    if (item.get("category") or "").lower() != "disaster":
+        return False
+
+    item_text = f"{item.get('title', '')} {item.get('summary', '')}"
+    other_text = f"{other.get('title', '')} {other.get('summary', '')}"
+    shared_events = {
+        term for term in DISASTER_EVENT_TERMS
+        if _term_present(item_text, term) and _term_present(other_text, term)
+    }
+    if not shared_events:
+        return False
+
+    a = _plain_tokens(item.get("title", ""))
+    b = _plain_tokens(other.get("title", ""))
+    distinctive = (a & b) - DISASTER_GENERIC_TOKENS
+    distinctive -= {token for term in DISASTER_EVENT_TERMS for token in term.split()}
+    distinctive = {
+        token for token in distinctive
+        if len(token) >= 4 and not token.isdigit()
+    }
+
+    return len(distinctive) >= 2
+
+
 def verify(item, all_items):
     title = item.get("title", "")
     matches = []
@@ -223,10 +304,13 @@ def verify(item, all_items):
         if other.get("source") == item.get("source"):
             continue
 
-        sim = _similarity(title, other.get("title", ""))
+        other_title = other.get("title", "")
+        sim = _similarity(title, other_title)
+        disaster_anchor = _disaster_corroboration_anchor(item, other)
+        geographic_conflict = _opposing_geography(title, other_title)
 
-        if sim >= 0.38:
-            matches.append((sim, other))
+        if not geographic_conflict and (disaster_anchor or sim >= 0.38):
+            matches.append((max(sim, 0.39 if disaster_anchor else sim), other))
 
     matches.sort(reverse=True, key=lambda x: x[0])
 

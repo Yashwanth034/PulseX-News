@@ -1,5 +1,7 @@
 import re
 
+from src.emergency import is_verified_major_disaster
+
 
 POST_LIMIT = 270
 
@@ -101,6 +103,7 @@ def has_rss_junk(text):
         r"\barchive submissions index search calendar rss\b",
         r"\bdiscover the cosmos\b",
         r"\bfollow our liveblog for the latest updates\b",
+        r"\b(?:un news )?app users can follow here\b",
         r"\bis pleased to welcome\b",
         r"\bwe are aiming,? of course,? to inform public policy debate\b",
     ]
@@ -269,10 +272,21 @@ def quality_check(item):
                 post
             )
 
-            if count < 3:
+            min_sentences = (
+                2
+                if is_verified_major_disaster(item)
+                else 3
+            )
+
+            if count < min_sentences:
                 errors.append(
                     "single post has fewer "
-                    "than 3 sentences"
+                    f"than {min_sentences} sentences"
+                )
+
+            if min_sentences == 2 and count == 2:
+                warnings.append(
+                    "verified major disaster accepted with concise source context"
                 )
 
             if count > 4:

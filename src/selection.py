@@ -1,8 +1,11 @@
 from collections import Counter
 
+from src.emergency import is_verified_major_disaster
+
 
 def _rank_key(item):
     return (
+        is_verified_major_disaster(item),
         item.get("priority_level") == "IMMEDIATE",
         item.get("priority_score", 0),
         item.get("event_status") == "UPDATE",
@@ -32,9 +35,11 @@ def select_balanced_queue(
     category_counts = Counter()
     source_counts = Counter()
 
-    def add(item, ignore_caps=False):
+    def add(item, ignore_caps=False, ignore_limit=False):
         story_id = item.get("id") or id(item)
-        if story_id in selected_ids or len(selected) >= limit:
+        if story_id in selected_ids:
+            return False
+        if not ignore_limit and len(selected) >= limit:
             return False
 
         category = item.get("category") or "world"
@@ -52,13 +57,23 @@ def select_balanced_queue(
         source_counts[source] += 1
         return True
 
-    # Safety-critical events retain top priority.
+    # Verified major disasters are guaranteed membership, even when several
+    # arrive in the same cycle and exceed the ordinary run limit.
+    for item in ranked:
+        if is_verified_major_disaster(item):
+            add(item, ignore_caps=True, ignore_limit=True)
+
+    if len(selected) >= limit:
+        return selected
+
+    # Other IMMEDIATE events retain top priority but still use ordinary
+    # capacity; the overflow guarantee is intentionally disaster-specific.
     for item in ranked:
         if item.get("priority_level") == "IMMEDIATE":
             add(item, ignore_caps=True)
 
     if len(selected) >= limit:
-        return selected[:limit]
+        return selected
 
     # Diversity pass: prefer a new topic category for each remaining slot.
     used_categories = set(category_counts)

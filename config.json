@@ -145,13 +145,6 @@
       "tier": 1
     },
     {
-      "name": "NASA News Releases",
-      "url": "https://www.nasa.gov/news-release/feed/",
-      "category": "space",
-      "primary": true,
-      "tier": 1
-    },
-    {
       "name": "SEC Press Releases",
       "url": "https://www.sec.gov/news/pressreleases.rss",
       "category": "finance",
@@ -188,112 +181,23 @@
       "region": "Africa"
     },
     {
-      "name": "Google News India Discovery",
-      "url": "https://news.google.com/rss/search?q=India+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
-      "category": "india",
+      "name": "UN News",
+      "url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml",
+      "category": "world",
       "primary": false,
-      "tier": 4,
-      "region": "South Asia",
-      "discovery": true
+      "tier": 2
     },
     {
-      "name": "Google News Japan Discovery",
-      "url": "https://news.google.com/rss/search?q=Japan+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "japan",
-      "primary": false,
-      "tier": 4,
-      "region": "East Asia",
-      "discovery": true
-    },
-    {
-      "name": "Google News China Discovery",
-      "url": "https://news.google.com/rss/search?q=China+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "china",
-      "primary": false,
-      "tier": 4,
-      "region": "East Asia",
-      "discovery": true
-    },
-    {
-      "name": "Google News South Korea Discovery",
-      "url": "https://news.google.com/rss/search?q=South+Korea+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "south-korea",
-      "primary": false,
-      "tier": 4,
-      "region": "East Asia",
-      "discovery": true
-    },
-    {
-      "name": "Google News Southeast Asia Discovery",
-      "url": "https://news.google.com/rss/search?q=Southeast+Asia+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "southeast-asia",
-      "primary": false,
-      "tier": 4,
-      "region": "Southeast Asia",
-      "discovery": true
-    },
-    {
-      "name": "Google News Europe Discovery",
-      "url": "https://news.google.com/rss/search?q=Europe+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "europe",
-      "primary": false,
-      "tier": 4,
-      "region": "Europe",
-      "discovery": true
-    },
-    {
-      "name": "Google News Middle East Discovery",
-      "url": "https://news.google.com/rss/search?q=Middle+East+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "middle-east",
-      "primary": false,
-      "tier": 4,
-      "region": "Middle East",
-      "discovery": true
-    },
-    {
-      "name": "Google News Africa Discovery",
-      "url": "https://news.google.com/rss/search?q=Africa+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "africa",
-      "primary": false,
-      "tier": 4,
-      "region": "Africa",
-      "discovery": true
-    },
-    {
-      "name": "Google News Latin America Discovery",
-      "url": "https://news.google.com/rss/search?q=Latin+America+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "latin-america",
-      "primary": false,
-      "tier": 4,
-      "region": "Latin America",
-      "discovery": true
-    },
-    {
-      "name": "Google News Canada Discovery",
-      "url": "https://news.google.com/rss/search?q=Canada+when:1d&hl=en&gl=CA&ceid=CA:en",
-      "category": "canada",
-      "primary": false,
-      "tier": 4,
-      "region": "North America",
-      "discovery": true
-    },
-    {
-      "name": "Google News Australia Discovery",
-      "url": "https://news.google.com/rss/search?q=Australia+when:1d&hl=en&gl=AU&ceid=AU:en",
-      "category": "australia",
-      "primary": false,
-      "tier": 4,
-      "region": "Oceania",
-      "discovery": true
-    },
-    {
-      "name": "Google News Pacific Discovery",
-      "url": "https://news.google.com/rss/search?q=Pacific+Islands+when:1d&hl=en&gl=US&ceid=US:en",
-      "category": "pacific",
-      "primary": false,
-      "tier": 4,
-      "region": "Oceania",
-      "discovery": true
+      "name": "GDACS Major Alerts",
+      "url": "https://www.gdacs.org/xml/rss.xml",
+      "category": "disaster",
+      "primary": true,
+      "tier": 1,
+      "allowed_alert_levels": [
+        "orange",
+        "red"
+      ],
+      "max_entries": 250
     }
   ],
   "discovery_min_score": 70,

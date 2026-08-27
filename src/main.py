@@ -16,6 +16,7 @@ from src.quality import quality_check
 from src.priority import priority
 from src.selection import select_balanced_queue
 from src.media import discover_media
+from src.emergency import is_verified_major_disaster
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -175,6 +176,7 @@ def fetch():
                 False
             ),
             "summary": s,
+            "alert_level": item.get("alert_level"),
             "media_candidates": item.get(
                 "media_candidates",
                 []
@@ -294,6 +296,7 @@ def main():
         "quality_rejected": 0,
         "translation_held": 0,
         "queued_before_limit": 0,
+        "same_run_event_suppressed": 0,
     }
 
     # ---------------------------------------------------------
@@ -516,9 +519,11 @@ def main():
     run_stats["deferred_by_run_limit"] = 0
 
     max_stories = CONFIG["max_stories_per_run"]
+    queued_event_ids = set()
 
     for x in balanced_candidates:
-        if len(q) >= max_stories:
+        major_disaster = is_verified_major_disaster(x)
+        if not major_disaster and len(q) >= max_stories:
             break
 
         run_stats["processed_for_queue"] += 1
@@ -563,6 +568,14 @@ def main():
             run_stats["duplicates"] += 1
             continue
 
+        # Never emit two posts for the same event inside one collection run.
+        # A later article may carry a newer figure and legitimately update the
+        # event memory, but PulseX should still publish only the strongest first
+        # report this cycle. A future cycle can publish a genuinely new update.
+        if eid in queued_event_ids:
+            run_stats["same_run_event_suppressed"] += 1
+            continue
+
         x.update(
             format_story(
                 x,
@@ -599,6 +612,7 @@ def main():
             x["media"] = media
 
         q.append(x)
+        queued_event_ids.add(eid)
         mark_queued(c, eid)
         run_stats["queued_before_limit"] += 1
 
