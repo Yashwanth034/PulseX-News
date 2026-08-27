@@ -1,190 +1,182 @@
-# World News Bot
+# PulseX
 
-An automated news bot that collects headlines from RSS sources, filters and prioritizes them, and posts them to X (Twitter) — fully automatically, on a schedule.
+PulseX is an automated news intelligence and publishing pipeline that surfaces important, understandable news from around the world — without turning the feed into noise.
 
-## How it works
+It collects from trusted sources, verifies and classifies stories, clusters reports of the same event, prioritizes major developments, formats concise posts, and optionally publishes approved stories to X.
+
+## Design goals
+
+- **Broad coverage** — politics, conflict, disasters, finance, business, technology, cybersecurity, health, science, space, environment, crime, sports, and entertainment.
+- **Disasters first** — verified severe disasters bypass normal category balancing and per-run limits.
+- **One event, one post** — multiple outlets covering the same story are clustered instead of flooding the queue.
+- **Real updates only** — genuine new facts trigger an update; wording tweaks and timestamp bumps do not.
+- **Clean output** — boilerplate, malformed summaries, and low-quality posts are rejected before publishing.
+- **Lean sources** — only high-value feeds are kept; redundant or low-yield ones are dropped.
+
+## Pipeline
 
 ```
-RSS sources → collect → verify/translate → qualify → prioritize
-    → queue → human review (optional) → publish to X
+Trusted sources
+  → Collection & normalization
+  → Classification & corroboration
+  → Event clustering & duplicate detection
+  → Priority & major-disaster detection
+  → Balanced queue selection
+  → Formatting & quality checks
+  → Media discovery
+  → Production safety gates
+  → Optional X publishing
 ```
 
-1. **Collect** (`src/main.py`) — gathers news from dozens of validated RSS sources
-2. **Verify & translate** (`src/intelligence.py`, `src/translator.py`) — classifies stories and translates non-English content to English
-3. **Quality check** (`src/quality.py`) — filters out low-quality or duplicate stories
-4. **Prioritize** (`src/priority.py`) — ranks stories by importance
-5. **Queue** — ready stories land in `data/queue.json`
-6. **Publish** (`src/production_run.py`) — posts stories to X with safety limits
+## Sources
 
-## Posting to X
+26 curated feeds, including BBC, Al Jazeera, DW, France 24, NPR, The Guardian, Africanews, UN News, USGS, NASA, ESA, WHO, SEC, CISA, and GDACS.
 
-The bot can post using **three methods** (selected via `X_POST_METHOD`):
+GDACS is filtered to Orange and Red alerts only, to keep disaster monitoring useful without low-severity noise.
 
-| Method | Description |
+Source configuration lives in [`config.json`](config.json).
+
+## Priority & labeling
+
+Importance and diversity are handled separately: a normal queue is balanced across topics and publishers, but a verified major disaster is never dropped to preserve that balance.
+
+Major-event signals include verified emergency priority, authoritative disaster alerts, severe/extreme alert levels, large casualty or displacement counts, and strong markers like catastrophic flooding or declared emergencies.
+
+Public labels:
+
+| Label | Meaning |
 |---|---|
-| `web` (default) | Browser automation through a **saved login session** — no API token needed |
-| `cdp` | Connects to your own Chrome/Brave browser via remote debugging |
-| `api` | Official X API v2 (requires a paid token) |
+| 🚨 `BREAKING` | Verified immediate event or major disaster |
+| 🔴 `UPDATE` | Meaningful development to an event already tracked |
+| 📰 `NEWS` / `DEVELOPING` | Important, non-breaking story |
 
-### One-time setup (web method)
+## Duplicate & update detection
 
-1. Capture a logged-in X browser session once and save it as `data/web_session.json`.
-2. Reuse that saved session for normal posting. The publisher checks the session first and does not perform another password login while it remains valid.
-3. If X later expires or revokes the saved session, capture a fresh session once. With no username/password configured, the bot fails safely instead of attempting repeated logins.
+Story and event memory is stored in `data/news.db`:
 
-For local recovery only, `X_USERNAME`, `X_PASSWORD`, and `X_OTP` may still be supplied manually. They are not required for the normal saved-session path and are not used by the GitHub Actions setup below.
+| Memory | Retention | Purpose |
+|---|---:|---|
+| Individual stories | 48 hours | Avoids reprocessing seen articles |
+| Normal events | 48 hours | Groups coverage of the same event |
+| Major events | 7 days | Keeps high-impact events tracked longer |
 
-### One-time setup (cdp method)
+Matching goes beyond exact headlines — normalized wording, event signals, numbers, context, and geography let differently phrased reports resolve to one event. Only one post per event is queued per run; a later cycle can still publish a genuine update.
 
-Useful when X restricts automated logins:
+## Quality controls
 
-1. Start your real browser with the debug port:
-   ```bash
-   brave-browser --remote-debugging-port=9222 &
-   ```
-2. Log in to x.com in that browser window.
-3. Test posting:
-   ```bash
-   .venv/bin/python test_cdp.py post "hello"
-   ```
+Before reaching production, posts are checked for: duplicate/repeated events, weak or unverified breaking claims, malformed or incomplete content, RSS/navigation boilerplate, concatenated or unrelated headlines, HTML/feed artifacts, low-confidence content, and formatting issues.
 
-### Posting methods compared
+Verified major disasters get a narrowly relaxed minimum-length rule so a legitimate emergency isn't dropped for a short authoritative description — all other checks still apply.
 
-| | `web` | `cdp` | `api` |
-|---|---|---|---|
-| Cost | Free | Free | ~$100/month |
-| Needs browser | No (saved session) | Yes (running) | No |
-| Risk of login limits | Low | None | None |
-| ToS risk | Yes | Yes | No |
+## Media
 
-> **Note:** Browser-based posting (web/cdp) is against X's Terms of Service and carries a risk of account suspension. The official API is the only fully compliant option. Use a throwaway account if possible.
+Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 
-## Safety features
+- Public HTTP/HTTPS URLs only; private, localhost, link-local, and reserved targets are rejected.
+- Media types are validated, download sizes capped, and redirects revalidated.
+- Falls back to text-only if media is missing or invalid.
+- Media discovery is optional — a story never fails purely for lacking media.
 
-The bot is deliberately conservative:
+## Safety
 
-- **Dry run by default** — `X_PUBLISH_ENABLED` defaults to `false`, nothing ever contacts X
-- **Kill switch** — `X_KILL_SWITCH` defaults to `true`, blocks all publishing
-- **Daily limit** — max 40 posts per UTC day (`X_DAILY_POST_LIMIT`)
-- **Half-hour limit** — max 3 posts per rolling 30 minutes (`X_HALF_HOUR_POST_LIMIT`)
-- **Health gate** — RED health blocks publishing (`src/health_gate.py`)
-- **Production controller** — final approval gate before any post (`src/production_controller.py`)
-- **Human review** — optional approval layer (`src/review_cli.py`), on by default
-- **Thread capacity** — a 3-tweet thread counts as 3 posts, checked before the first tweet is sent
+- `X_PUBLISH_ENABLED` gates publishing; `X_KILL_SWITCH` can block it immediately.
+- Health checks run before production.
+- Daily and rolling posting limits are enforced.
+- Optional human review is supported.
+- Production state is persisted separately from application source.
+- Saved browser-session data is never committed to the repo — the GitHub Actions workflow restores it only for the publish step and deletes it afterward.
 
-## Memory & retention
+## Scheduling
 
-The bot keeps two kinds of memory in `data/news.db`, cleaned automatically on every collection run:
+Triggered via GitHub Actions `workflow_dispatch`. For external scheduling, a service like **cron-job.org** can call the workflow-dispatch endpoint on a fixed interval — keep only one active scheduler to avoid duplicate runs.
 
-| Memory | Retention | What it does |
-|---|---|---|
-| Individual stories (`stories` table) | 48 hours (`story_memory_hours`) | Prevents already-seen articles from being re-processed |
-| Normal events (`events` table, `major=0`) | 48 hours (`event_memory_hours`) | Tracks how a story develops across sources |
-| Major events (`events` table, `major=1`) | 168 hours / 7 days (`major_event_memory_hours`) | Keeps high-priority events in memory longer |
+```
+cron-job.org (every 10 min) → GitHub workflow_dispatch → PulseX pipeline → Safety gates → Optional X publish
+```
 
-- **Automatic cleanup** — every run of `src.main` deletes only records whose retention has elapsed (timestamp-based, idempotent, safe in GitHub Actions)
-- **Update detection** — if the same URL/title reappears with a newer published/updated timestamp, event memory re-examines it; meaningful changes become `UPDATE` events, mere timestamp bumps stay duplicates
-- **Deduplication is never weakened** — same article with same/older timestamp is still skipped instantly
+Workflow file: `.github/workflows/news.yml`
 
-## Environment variables
+## GitHub Actions secret
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `X_USERNAME` | — | Optional local recovery username/email |
-| `X_PASSWORD` | — | Optional local recovery password |
-| `X_OTP` | — | Optional local recovery verification code |
-| `X_HEADLESS` | `true` | `false` to watch the browser |
-| `X_PUBLISH_ENABLED` | `false` | `true` to allow live publishing |
-| `X_KILL_SWITCH` | `true` | `false` to disarm the kill switch |
-| `X_REQUIRE_HUMAN_REVIEW` | `true` | `false` to skip the approval layer |
-| `X_POST_METHOD` | `web` | `web`, `cdp`, or `api` |
-| `X_DAILY_POST_LIMIT` | `40` | Max posts per UTC day |
-| `X_HALF_HOUR_POST_LIMIT` | `3` | Max posts per rolling 30 min |
-| `X_USER_ACCESS_TOKEN` | — | Official API bearer token (api method only) |
-| `X_CDP_URL` | `http://localhost:9222` | CDP debug endpoint |
+| Secret | Purpose |
+|---|---|
+| `X_WEB_SESSION` | Saved browser-session JSON for the web publisher |
+
+Written temporarily to `data/web_session.json` during the publish step, then removed. If missing, collection still runs and publishing is skipped safely.
 
 ## Setup
-
-Create the local virtual environment once and install all runtime/test dependencies:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Running
-
-### Automatic (every 5 minutes)
+## Usage
 
 ```bash
-crontab -e
-# add:
-*/5 * * * * /path/to/project/run_bot.sh >/dev/null 2>&1
+.venv/bin/python -m src.main             # Collect, verify, prioritize, build queue
+.venv/bin/python -m src.dry_run          # Preview output without posting
+.venv/bin/python -m src.status           # Inspect current status
+.venv/bin/python -m src.production_run   # Run production pipeline (requires publishing config)
 ```
 
-`run_bot.sh` collects news, runs the health gate, then invokes the production runner and logs to `data/bot_run.log`. It no longer overrides safety settings. For unattended live posting, explicitly set `X_PUBLISH_ENABLED=true`, `X_KILL_SWITCH=false`, and (only if desired) `X_REQUIRE_HUMAN_REVIEW=false` in `.env`; otherwise publishing remains safely blocked.
-
-### Manual
+## Tests
 
 ```bash
-# collect news
-.venv/bin/python -m src.main
-
-# preview what would be posted (dry run)
-.venv/bin/python -m src.dry_run
-
-# publish (after enabling env vars)
-.venv/bin/python -m src.production_run
-
-# review a story (if human review is enabled)
-.venv/bin/python -m src.review_cli STORY_ID APPROVE
-```
-
-### Tests
-
-```bash
+.venv/bin/python -m src.test_news_improvements
+.venv/bin/python -m src.test_categories
 .venv/bin/python -m src.regression_test
 .venv/bin/python -m src.test_quality
 ```
 
-## GitHub Actions
+Covers disaster prioritization, cross-source corroboration, same-event suppression, source filtering, feed cleanup, media handling, classification, and publishing fallbacks.
 
-The repository includes `.github/workflows/news.yml`, which runs every 5 minutes in GitHub Actions. It collects, verifies and quality-checks stories, then can publish qualifying posts through the existing Playwright `web` publisher.
+## Configuration
 
-For automatic GitHub posting, create one repository **Actions Secret** under **Settings → Secrets and variables → Actions**:
+Runtime behavior is set in [`config.json`](config.json): minimum queue score, max ordinary stories per run, memory retention, breaking threshold, feed definitions, source tiers, disaster alert filtering, and collection limits.
 
-- `X_WEB_SESSION` — the contents of the one-time captured `data/web_session.json`
+Publishing is configured via environment variables:
 
-The workflow restores that secret into a temporary `data/web_session.json`, publishes through the saved browser login, then deletes the temporary file. No X username or password is supplied to GitHub Actions, so the workflow cannot repeatedly log in with a password. If `X_WEB_SESSION` is missing, collection still runs but publishing is skipped safely. If X expires the saved session, publishing fails and the session must be captured once again. The `state` branch stores only `news.db` and `production_state.json`; browser cookies/session data are never committed there.
+| Variable | Default | Purpose |
+|---|---|---|
+| `X_PUBLISH_ENABLED` | `false` | Enables live publishing |
+| `X_KILL_SWITCH` | `true` | Immediately blocks live publishing |
+| `X_REQUIRE_HUMAN_REVIEW` | `true` | Requires manual approval |
+| `X_POST_METHOD` | `web` | Publishing backend |
+| `X_HEADLESS` | `true` | Browser visibility |
+| `X_DAILY_POST_LIMIT` | `40` | Max posts per UTC day |
+| `X_HALF_HOUR_POST_LIMIT` | `3` | Max posts per rolling 30 min |
+| `X_CDP_URL` | `http://localhost:9222` | Optional local CDP browser endpoint |
 
-## Security
-
-- Local recovery credentials, if used, live only in `.env`, which is **gitignored**
-- The saved browser session (`data/web_session.json`) is also gitignored and must never be committed
-- GitHub Actions receives the saved session only through the encrypted `X_WEB_SESSION` repository secret
-- The workflow deletes the restored session file after the publish attempt and never persists it to the public `state` branch or artifacts
-
-## Project layout
+## Project structure
 
 ```
+config.json                     Source and runtime configuration
+.github/workflows/news.yml      GitHub Actions production workflow
+
 src/
-  collector.py            # RSS feed collection
-  intelligence.py         # classification & verification
-  translator.py           # translation to English
-  quality.py              # quality filtering
-  priority.py             # story ranking
-  formatter.py            # tweet/thread formatting
-  production_run.py       # publish entry point
-  production_controller.py# final safety gate
-  x_publisher.py          # official API publisher
-  x_web_publisher.py      # browser-based publisher (saved session)
-  health_gate.py          # system health status
-  review_cli.py           # manual story review
-  dashboard.py            # review dashboard
-  metrics.py              # run metrics
-  status.py               # run status
-data/                     # queue, state, sessions, logs (gitignored where needed)
-test_x_web.py             # login/session/post test tools
-test_cdp.py               # CDP browser test tools
-run_bot.sh                # cron entry point
+  collector.py                  Feed collection and normalization
+  intelligence.py                Classification and corroboration
+  emergency.py                  Verified major-disaster detection
+  event_memory.py               Event clustering and update detection
+  selection.py                  Balanced queue and disaster priority
+  priority.py                   Importance scoring
+  formatter.py                  Clean public post formatting
+  quality.py                    Final content-quality checks
+  media.py                      Safe image/video discovery and download
+  production_controller.py      Production safety gate
+  production_run.py             Production publish entry point
+  x_web_publisher.py            Saved-session browser publisher
+  x_publisher.py                X publishing backend
+  health_gate.py                Runtime health checks
+  metrics.py                    Operational metrics
+  status.py                     Current run status
+
+data/
+  news.db                       Story and event memory
+  queue.json                    Current selected stories
+  production_state.json         Publishing state
+  source_health.json            Source health snapshot
 ```
+
+PulseX is built to publish fewer, better stories: important events across sectors, strong disaster coverage, clean wording, and aggressive duplicate suppression.
