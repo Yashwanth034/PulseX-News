@@ -81,7 +81,7 @@ Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 
 - `X_PUBLISH_ENABLED` gates publishing; `X_KILL_SWITCH` can block it immediately.
 - Health checks run before production.
-- Daily and rolling posting limits are enforced.
+- Posting is capped at 1 per rolling 30 minutes, 2 per rolling hour, and 48 per UTC day by default.
 - Optional human review is supported.
 - Production state is persisted separately from application source.
 - Saved browser-session data is never committed to the repo — the GitHub Actions workflow restores it only for the publish step and deletes it afterward.
@@ -91,7 +91,7 @@ Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 Triggered via GitHub Actions `workflow_dispatch`. For external scheduling, a service like **cron-job.org** can call the workflow-dispatch endpoint on a fixed interval — keep only one active scheduler to avoid duplicate runs.
 
 ```
-cron-job.org (every 10 min) → GitHub workflow_dispatch → PulseX pipeline → Safety gates → Optional X publish
+cron-job.org (every 30 min) → GitHub workflow_dispatch → PulseX pipeline → Safety gates → Optional X publish
 ```
 
 Workflow file: `.github/workflows/news.yml`
@@ -144,8 +144,9 @@ Publishing is configured via environment variables:
 | `X_REQUIRE_HUMAN_REVIEW` | `true` | Requires manual approval |
 | `X_POST_METHOD` | `web` | Publishing backend |
 | `X_HEADLESS` | `true` | Browser visibility |
-| `X_DAILY_POST_LIMIT` | `40` | Max posts per UTC day |
-| `X_HALF_HOUR_POST_LIMIT` | `3` | Max posts per rolling 30 min |
+| `X_DAILY_POST_LIMIT` | `48` | Max posts per UTC day |
+| `X_HALF_HOUR_POST_LIMIT` | `1` | Max posts per rolling 30 min |
+| `X_HOURLY_POST_LIMIT` | `2` | Max posts per rolling 1 hour |
 | `X_CDP_URL` | `http://localhost:9222` | Optional local CDP browser endpoint |
 
 ## Project structure

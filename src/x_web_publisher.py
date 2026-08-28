@@ -359,7 +359,7 @@ class XWebPublisher(XPublisher):
         - Live publishing disabled by default.
         - Kill switch blocks publishing.
         - Production controller must allow live publishing.
-        - Daily and half-hour posting limits apply.
+        - Daily, half-hour, and hourly posting limits apply.
         - Failed posts are NOT counted.
         - Dry-run mode never opens a browser.
 

@@ -153,7 +153,7 @@ def controller():
     daily_limit = int(
         os.getenv(
             "X_DAILY_POST_LIMIT",
-            "40"
+            "48"
         )
     )
 
@@ -161,13 +161,27 @@ def controller():
     # any rolling 30-minute window.
     #
     # Default:
-    # 3 posts / 30 minutes.
+    # 1 post / 30 minutes.
     # =====================================================
 
     half_hour_limit = int(
         os.getenv(
             "X_HALF_HOUR_POST_LIMIT",
-            "3"
+            "1"
+        )
+    )
+
+    # Maximum number of individual X posts during
+    # any rolling 1-hour window.
+    #
+    # Default:
+    # 2 posts / 1 hour.
+    # =====================================================
+
+    hourly_limit = int(
+        os.getenv(
+            "X_HOURLY_POST_LIMIT",
+            "2"
         )
     )
 
@@ -186,8 +200,8 @@ def controller():
 
         state["last_reset_date"] = today
 
-        # Previous day's timestamps are irrelevant.
-        state["recent_post_times"] = []
+        # Keep recent_post_times. Rolling 30-minute and
+        # 1-hour limits must remain valid across midnight.
 
     # =====================================================
     # NORMALIZE DAILY COUNT
@@ -211,8 +225,9 @@ def controller():
     # =====================================================
     # CLEAN POST TIMESTAMPS
     #
-    # Keep only timestamps from the previous
-    # 30 minutes.
+    # Keep timestamps from the previous hour so the same
+    # durable state can enforce both 30-minute and 1-hour
+    # rolling limits.
     # =====================================================
 
     recent_post_times = []
@@ -237,9 +252,8 @@ def controller():
         if age_seconds < 0:
             continue
 
-        # Keep posts from the rolling
-        # 30-minute window.
-        if age_seconds < 1800:
+        # Keep posts from the rolling 1-hour window.
+        if age_seconds < 3600:
 
             recent_post_times.append(
                 timestamp.isoformat()
@@ -258,12 +272,31 @@ def controller():
         0
     )
 
-    half_hour_post_count = len(
+    hourly_post_count = len(
         state.get(
             "recent_post_times",
             []
         )
     )
+
+    half_hour_post_count = 0
+
+    for value in state.get(
+        "recent_post_times",
+        []
+    ):
+
+        timestamp = parse_timestamp(value)
+
+        if timestamp is None:
+            continue
+
+        age_seconds = (
+            now - timestamp
+        ).total_seconds()
+
+        if 0 <= age_seconds < 1800:
+            half_hour_post_count += 1
 
     ready_count = int(
         queue.get(
@@ -292,11 +325,17 @@ def controller():
         half_hour_limit - half_hour_post_count
     )
 
+    hourly_remaining = max(
+        0,
+        hourly_limit - hourly_post_count
+    )
+
     # The publisher must never publish more than
     # the smallest available capacity.
     publish_capacity = min(
         daily_remaining,
         half_hour_remaining,
+        hourly_remaining,
         ready_count
     )
 
@@ -407,6 +446,29 @@ def controller():
         )
 
     # -----------------------------------------------------
+    # Invalid 1-hour limit.
+    # -----------------------------------------------------
+
+    if hourly_limit <= 0:
+
+        reasons.append(
+            "1-hour post limit is zero"
+        )
+
+    # -----------------------------------------------------
+    # 1-hour limit reached.
+    # -----------------------------------------------------
+
+    if (
+        hourly_post_count
+        >= hourly_limit
+    ):
+
+        reasons.append(
+            "1-hour post limit reached"
+        )
+
+    # -----------------------------------------------------
     # No stories available.
     # -----------------------------------------------------
 
@@ -475,6 +537,18 @@ def controller():
 
         "half_hour_remaining": (
             half_hour_remaining
+        ),
+
+        "hourly_limit": (
+            hourly_limit
+        ),
+
+        "hourly_post_count": (
+            hourly_post_count
+        ),
+
+        "hourly_remaining": (
+            hourly_remaining
         ),
 
         "publish_capacity": (

@@ -19,8 +19,9 @@ class XPublisher:
         - Live publishing is disabled by default.
         - Kill switch blocks publishing.
         - Production controller must explicitly allow publishing.
-        - Maximum 40 successful posts per UTC day by default.
-        - Maximum 3 successful posts in a rolling 30-minute window by default.
+        - Maximum 48 successful posts per UTC day by default.
+        - Maximum 1 successful post in a rolling 30-minute window by default.
+        - Maximum 2 successful posts in a rolling 1-hour window by default.
         - A thread consumes one post for every tweet in the thread.
         - Failed API requests are NOT counted.
         - A thread is checked for sufficient capacity BEFORE it starts.
@@ -63,14 +64,21 @@ class XPublisher:
         self.daily_limit = int(
             os.getenv(
                 "X_DAILY_POST_LIMIT",
-                "40"
+                "48"
             )
         )
 
         self.half_hour_limit = int(
             os.getenv(
                 "X_HALF_HOUR_POST_LIMIT",
-                "3"
+                "1"
+            )
+        )
+
+        self.hourly_limit = int(
+            os.getenv(
+                "X_HOURLY_POST_LIMIT",
+                "2"
             )
         )
 
@@ -145,7 +153,8 @@ class XPublisher:
 
             state["last_reset_date"] = today
 
-            state["recent_post_times"] = []
+            # Do not clear recent_post_times here. Rolling
+            # limits must remain valid across UTC midnight.
 
         # -------------------------------------------------
         # Normalize daily count
@@ -168,7 +177,11 @@ class XPublisher:
             state["daily_post_count"] = 0
 
         # -------------------------------------------------
-        # Clean rolling 30-minute window
+        # Clean rolling 1-hour window.
+        #
+        # We retain one hour of timestamps so both the
+        # 30-minute and 1-hour limits can be enforced from
+        # the same durable state.
         # -------------------------------------------------
 
         recent = []
@@ -202,7 +215,7 @@ class XPublisher:
                 ).total_seconds()
 
                 if (
-                    0 <= age < 1800
+                    0 <= age < 3600
                 ):
 
                     recent.append(
@@ -234,12 +247,44 @@ class XPublisher:
             )
         )
 
-        recent_count = len(
-            state.get(
-                "recent_post_times",
-                []
-            )
+        now = datetime.now(
+            timezone.utc
         )
+
+        hour_count = 0
+        half_hour_count = 0
+
+        for value in state.get(
+            "recent_post_times",
+            []
+        ):
+
+            try:
+                timestamp = datetime.fromisoformat(
+                    value.replace(
+                        "Z",
+                        "+00:00"
+                    )
+                )
+
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(
+                        tzinfo=timezone.utc
+                    )
+
+                age = (
+                    now
+                    - timestamp.astimezone(timezone.utc)
+                ).total_seconds()
+
+            except Exception:
+                continue
+
+            if 0 <= age < 3600:
+                hour_count += 1
+
+            if 0 <= age < 1800:
+                half_hour_count += 1
 
         daily_remaining = max(
             0,
@@ -250,12 +295,19 @@ class XPublisher:
         half_hour_remaining = max(
             0,
             self.half_hour_limit
-            - recent_count
+            - half_hour_count
+        )
+
+        hourly_remaining = max(
+            0,
+            self.hourly_limit
+            - hour_count
         )
 
         return min(
             daily_remaining,
-            half_hour_remaining
+            half_hour_remaining,
+            hourly_remaining
         )
 
     # =====================================================
