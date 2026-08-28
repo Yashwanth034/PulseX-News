@@ -1,11 +1,11 @@
 {
-  "live_enabled": false,
+  "live_enabled": true,
   "kill_switch": false,
-  "daily_post_count": 38,
+  "daily_post_count": 39,
   "last_reset_date": "2026-08-28",
   "recent_post_times": [
-    "2026-08-28T10:41:03.198879+00:00",
     "2026-08-28T11:01:26.667886+00:00",
-    "2026-08-28T11:01:40.742565+00:00"
+    "2026-08-28T11:01:40.742565+00:00",
+    "2026-08-28T11:21:09.688615+00:00"
   ]
 }
