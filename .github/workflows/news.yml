@@ -29,7 +29,7 @@ jobs:
 
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
             git fetch origin state
-            for file in news.db production_state.json; do
+            for file in news.db production_state.json web_session.enc; do
               git show "origin/state:data/${file}" > "data/${file}" 2>/dev/null || rm -f "data/${file}"
             done
           fi
@@ -80,17 +80,33 @@ jobs:
       - name: Safety health gate
         run: python -m src.health_gate
 
-      - name: Restore one-time X browser session
+      - name: Restore X browser session
         id: x_session
         shell: bash
         env:
           X_WEB_SESSION: ${{ secrets.X_WEB_SESSION }}
+          X_SESSION_ENCRYPTION_KEY: ${{ secrets.X_SESSION_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
+          rm -f data/web_session.json
 
+          # Preferred path: decrypt the rolling session saved on the state branch.
+          if [[ -f data/web_session.enc && -n "${X_SESSION_ENCRYPTION_KEY:-}" ]]; then
+            if python -m src.session_crypto decrypt data/web_session.enc data/web_session.json; then
+              echo "source=rolling" >> "$GITHUB_OUTPUT"
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "::warning::Rolling X session could not be decrypted; falling back to X_WEB_SESSION bootstrap."
+            rm -f data/web_session.json
+          fi
+
+          # Bootstrap/recovery path: repository secret captured manually from X.
           if [[ -z "${X_WEB_SESSION:-}" ]]; then
+            echo "source=none" >> "$GITHUB_OUTPUT"
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::X posting skipped: repository Actions Secret X_WEB_SESSION is missing."
+            echo "::warning::X posting skipped: no usable rolling session and X_WEB_SESSION is missing."
             exit 0
           fi
 
@@ -108,10 +124,17 @@ jobs:
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(session), encoding="utf-8")
           path.chmod(0o600)
-          print("Saved X browser session restored.")
+          print("Bootstrap X browser session restored.")
           PY
 
+          echo "source=bootstrap" >> "$GITHUB_OUTPUT"
           echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and refresh X browser session
+        if: steps.x_session.outputs.ready == 'true'
+        env:
+          X_BROWSER_CHANNEL: chrome
+        run: python -m src.x_session_health
 
       - name: Production controller
         env:
@@ -132,6 +155,21 @@ jobs:
           X_BROWSER_CHANNEL: chrome
         run: python -m src.production_run
 
+      - name: Preserve refreshed X browser session
+        if: steps.x_session.outputs.ready == 'true' && success()
+        shell: bash
+        env:
+          X_SESSION_ENCRYPTION_KEY: ${{ secrets.X_SESSION_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${X_SESSION_ENCRYPTION_KEY:-}" ]]; then
+            echo "::warning::Rolling X-session persistence is disabled until X_SESSION_ENCRYPTION_KEY is configured."
+            exit 0
+          fi
+
+          python -m src.session_crypto encrypt data/web_session.json data/web_session.enc
+
       - name: Remove restored X browser session
         if: always()
         run: rm -f data/web_session.json
@@ -150,6 +188,7 @@ jobs:
             data/metrics.json
             data/health.json
             data/source_health.json
+            data/publish_log.json
           retention-days: 1
 
       - name: Persist bot state
@@ -178,7 +217,7 @@ jobs:
           mkdir -p /tmp/news-state/data
           state_files=()
 
-          for file in news.db production_state.json; do
+          for file in news.db production_state.json web_session.enc; do
             if [[ -f "data/${file}" ]]; then
               cp "data/${file}" "/tmp/news-state/data/${file}"
               state_files+=("data/${file}")
@@ -191,7 +230,9 @@ jobs:
             exit 0
           fi
 
-          git add -- "${state_files[@]}"
+          # web_session.enc is intentionally ignored on main so it cannot be
+          # accidentally committed there; force-add it only inside state worktree.
+          git add -f -- "${state_files[@]}"
 
           if git diff --cached --quiet; then
             exit 0

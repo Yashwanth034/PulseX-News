@@ -23,9 +23,14 @@ def get_credentials():
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "login"
-    username, password = get_credentials()
     headless = os.getenv("X_HEADLESS", "false").lower() == "true"
     otp = os.getenv("X_OTP", "").strip()
+
+    if mode == "manual":
+        username = ""
+        password = ""
+    else:
+        username, password = get_credentials()
 
     composer = _WebComposer(
         username,

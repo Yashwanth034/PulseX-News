@@ -108,6 +108,10 @@ class _WebComposer:
 
     def ensure_logged_in(self):
         if self._session_is_valid():
+            # X can refresh cookies/storage during ordinary authenticated page loads.
+            # Persist the refreshed state so CI can roll it forward instead of
+            # repeatedly starting from one frozen browser-session snapshot.
+            self._save_session()
             return
 
         # A saved browser session is the normal unattended path.
