@@ -188,6 +188,7 @@ jobs:
             data/metrics.json
             data/health.json
             data/source_health.json
+            data/publish_log.json
           retention-days: 1
 
       - name: Persist bot state
