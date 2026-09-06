@@ -84,7 +84,8 @@ Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 - Posting is capped at 1 per rolling 30 minutes, 2 per rolling hour, and 48 per UTC day by default.
 - Optional human review is supported.
 - Production state is persisted separately from application source.
-- Saved browser-session data is never committed to the repo — the GitHub Actions workflow restores it only for the publish step and deletes it afterward.
+- Plain X browser-session JSON is never committed. GitHub Actions validates it, preserves any refreshed cookies, encrypts it with AES-256-GCM, stores only the ciphertext on the `state` branch, and deletes the plaintext after each run.
+- An expired/revoked X session fails the workflow visibly instead of being reported as a successful publish run.
 
 ## Scheduling
 
@@ -96,13 +97,16 @@ cron-job.org (every 30 min) → GitHub workflow_dispatch → PulseX pipeline →
 
 Workflow file: `.github/workflows/news.yml`
 
-## GitHub Actions secret
+## GitHub Actions secrets
 
 | Secret | Purpose |
 |---|---|
-| `X_WEB_SESSION` | Saved browser-session JSON for the web publisher |
+| `X_WEB_SESSION` | Manually captured browser session used only as bootstrap/recovery |
+| `X_SESSION_ENCRYPTION_KEY` | Long random secret used to encrypt/decrypt the rolling browser session |
 
-Written temporarily to `data/web_session.json` during the publish step, then removed. If missing, collection still runs and publishing is skipped safely.
+The workflow prefers the encrypted rolling session from the `state` branch. Only ciphertext is stored there; the decryption key stays in GitHub Actions secrets. `X_WEB_SESSION` remains a recovery fallback if the rolling state is missing or cannot be decrypted. Plain session JSON exists only temporarily on the runner and is removed after the run.
+
+If X explicitly revokes the account session, run `scripts/renew_x_session.sh`, then update `X_WEB_SESSION` with the command it prints and trigger one verification workflow.
 
 ## Setup
 
@@ -127,6 +131,10 @@ python3 -m venv .venv
 .venv/bin/python -m src.test_categories
 .venv/bin/python -m src.regression_test
 .venv/bin/python -m src.test_quality
+.venv/bin/python -m src.test_publish_limits
+.venv/bin/python -m src.test_session_crypto
+.venv/bin/python -m src.test_x_session_health
+.venv/bin/python -m src.test_production_run
 ```
 
 Covers disaster prioritization, cross-source corroboration, same-event suppression, source filtering, feed cleanup, media handling, classification, and publishing fallbacks.
@@ -167,6 +175,8 @@ src/
   media.py                      Safe image/video discovery and download
   production_controller.py      Production safety gate
   production_run.py             Production publish entry point
+  x_session_health.py           Validates and refreshes the saved X session
+  session_crypto.py             Encrypts/decrypts rolling X session state
   x_web_publisher.py            Saved-session browser publisher
   x_publisher.py                X publishing backend
   health_gate.py                Runtime health checks
