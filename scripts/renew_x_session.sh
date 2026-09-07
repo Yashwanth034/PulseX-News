@@ -12,8 +12,7 @@ fi
 rm -f data/web_session.json
 
 X_BROWSER_CHANNEL="${X_BROWSER_CHANNEL:-chrome}" \
-X_HEADLESS=false \
-.venv/bin/python test_x_web.py manual
+.venv/bin/python scripts/capture_x_session.py
 
 .venv/bin/python - <<'PY'
 import json
