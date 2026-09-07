@@ -1,0 +1,4 @@
+# PulseX runtime output is generated locally or restored from the state branch.
+# Keep main source clean; only this marker is tracked.
+*
+!.gitignore
