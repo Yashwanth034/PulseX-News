@@ -1,0 +1,30 @@
+name: Temporary PR5 merger
+
+on:
+  push:
+    branches:
+      - automation-merge-pr5
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  merge-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Merge hotfix PR 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge 5 --repo "$GITHUB_REPOSITORY" --merge --delete-branch
+
+      - name: Trigger PulseX after hotfix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 5
+          gh workflow run news.yml --repo "$GITHUB_REPOSITORY" --ref main
