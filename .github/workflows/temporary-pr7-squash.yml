@@ -1,0 +1,42 @@
+name: Temporary PR7 squash merge
+
+on:
+  push:
+    branches:
+      - automation-squash-pr7
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  merge-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Squash merge cleanup PR 7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge 7 \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch \
+            --subject "Clean PulseX repository" \
+            --body "Remove obsolete runtime artifacts and legacy launchers; align PulseX naming, docs, session tooling, and generated-output handling."
+
+      - name: Trigger cleaned PulseX workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 5
+          gh workflow run news.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Delete temporary automation branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/automation-squash-pr7" || true
