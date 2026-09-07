@@ -58,6 +58,8 @@ POST_BUTTON_FALLBACK = '[data-testid="tweetButtonInline"]'
 TOAST = '[data-testid="toast"]'
 LOGGED_IN_MARKER = (
     '[data-testid="SideNav_NewTweet_Button"], '
+    '[data-testid="SideNav_AccountSwitcher_Button"], '
+    '[data-testid="AppTabBar_Home_Link"], '
     'a[href="/compose/post"]'
 )
 SKIP_BUTTONS = [
@@ -148,7 +150,23 @@ class _WebComposer:
     def _session_is_valid(self):
         try:
             self.page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
-            self.page.wait_for_timeout(4000)
+
+            # GitHub-hosted runners can render X more slowly than a local
+            # browser. Give the authenticated shell time to hydrate before
+            # deciding that a perfectly good storage state is invalid.
+            logged_in = False
+            for _ in range(15):
+                if self._is_logged_in_page():
+                    logged_in = True
+                    break
+                current = self.page.url
+                if (
+                    "x.com/login" in current
+                    or "i/flow" in current
+                    or "onboarding" in current
+                ):
+                    break
+                self.page.wait_for_timeout(1000)
 
             parsed = urlsplit(self.page.url)
             safe_path = parsed.path or "/"
@@ -159,7 +177,7 @@ class _WebComposer:
                 f"path={safe_path}; logged_in_marker={marker_count}; "
                 f"username_field={username_count}; challenge_field={challenge_count}"
             )
-            return self._is_logged_in_page()
+            return logged_in
         except Exception as exc:
             self.session_diagnostic = f"browser_check_error={type(exc).__name__}"
             return False
