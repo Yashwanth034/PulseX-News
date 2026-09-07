@@ -54,7 +54,7 @@ CATEGORY_TERMS = {
 
     "technology": {
         "technology", "ai", "artificial intelligence", "chip",
-        "semiconductor", "software", "robot", "robotics", "app", "apps",
+        "semiconductor", "software", "robot", "robotics", "drone", "drones", "app", "apps",
         "startup", "startups", "platform", "algorithm", "game", "gaming",
         "gamer", "console", "playstation", "xbox", "digital media"
     },
@@ -133,7 +133,7 @@ def _term_present(text, term):
     )
 
 
-def _category(text, source_category):
+def _category(text, source_category, title=None):
     raw = (source_category or "").lower().strip()
 
     # These are geographic/source labels, NOT article topics.
@@ -157,17 +157,37 @@ def _category(text, source_category):
     }
 
     lower = (text or "").lower()
+    title_lower = (title or "").lower()
 
     scores = {}
+    title_scores = {}
 
     for category, terms in CATEGORY_TERMS.items():
         scores[category] = sum(
             1 for term in terms
             if _term_present(lower, term)
         )
+        title_scores[category] = sum(
+            1 for term in terms
+            if title_lower and _term_present(title_lower, term)
+        )
 
-    best_category = max(scores, key=scores.get)
-    best_score = scores[best_category]
+    best_score = max(scores.values())
+    tied = [category for category, score in scores.items() if score == best_score]
+    best_category = tied[0]
+
+    # When the full article text produces a tie, prefer the category whose
+    # signal is strongest in the headline. This avoids a summary-side event
+    # word (for example "wildfire") overriding the actual headline focus
+    # (for example a story about drone technology used to detect fires).
+    if len(tied) > 1 and title_lower:
+        best_title_score = max(title_scores[category] for category in tied)
+        headline_winners = [
+            category for category in tied
+            if title_scores[category] == best_title_score
+        ]
+        if best_title_score > 0 and len(headline_winners) == 1:
+            best_category = headline_winners[0]
 
     # A regional/source label should never become the article topic. One
     # boundary-matched topical signal is enough; requiring two pushed obvious
@@ -194,7 +214,7 @@ def _category(text, source_category):
 def classify(title, summary, source_category, item=None):
     item = item or {}
     text = f"{title} {summary}".lower()
-    category = _category(text, source_category)
+    category = _category(text, source_category, title=title)
     urgency_hits = [term for term in URGENT_TERMS if _term_present(text, term)]
     base = 35 + min(25, len(urgency_hits) * 8)
     base += reliability_bonus(item)

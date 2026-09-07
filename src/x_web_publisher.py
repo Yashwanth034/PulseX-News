@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from src.media import download_media
 from src.x_publisher import XPublisher, XPublisherError
@@ -95,6 +96,7 @@ class _WebComposer:
                 storage = None
         self.context = self.browser.new_context(storage_state=storage)
         self.page = self.context.new_page()
+        self.session_diagnostic = "not checked"
 
     # -------------------------------------------------
     # LOGIN
@@ -120,8 +122,9 @@ class _WebComposer:
         # fall back to repeated password logins when a session expires.
         if not self.username or not self.password:
             raise XPublisherError(
-                "Saved X session is missing or expired. "
-                "Re-capture the one-time browser session."
+                "Saved X session was not accepted by X on this runner "
+                f"({self.session_diagnostic}). "
+                "Re-capture the browser session only if X is also logged out locally."
             )
 
         self._login()
@@ -146,8 +149,19 @@ class _WebComposer:
         try:
             self.page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
             self.page.wait_for_timeout(4000)
+
+            parsed = urlsplit(self.page.url)
+            safe_path = parsed.path or "/"
+            marker_count = self.page.locator(LOGGED_IN_MARKER).count()
+            username_count = self.page.locator(USERNAME_SELECTOR).count() + self.page.locator(USERNAME_SELECTOR_FALLBACK).count()
+            challenge_count = self.page.locator(CHALLENGE_INPUT).count()
+            self.session_diagnostic = (
+                f"path={safe_path}; logged_in_marker={marker_count}; "
+                f"username_field={username_count}; challenge_field={challenge_count}"
+            )
             return self._is_logged_in_page()
-        except Exception:
+        except Exception as exc:
+            self.session_diagnostic = f"browser_check_error={type(exc).__name__}"
             return False
 
     def _login(self):
