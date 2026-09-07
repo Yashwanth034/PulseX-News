@@ -84,8 +84,8 @@ Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 - Posting is capped at 1 per rolling 30 minutes, 2 per rolling hour, and 48 per UTC day by default.
 - Optional human review is supported.
 - Production state is persisted separately from application source.
-- Plain X browser-session JSON is never committed. GitHub Actions validates it, preserves any refreshed cookies, encrypts it with AES-256-GCM, stores only the ciphertext on the `state` branch, and deletes the plaintext after each run.
-- An expired/revoked X session fails the workflow visibly instead of being reported as a successful publish run.
+- Plain X browser-session JSON is never committed. GitHub Actions validates its structure/expiry locally, the live publisher confirms the session against X when a post is attempted and preserves refreshed cookies, then AES-256-GCM encrypts the session and stores only ciphertext on the `state` branch.
+- An expired/revoked X session fails the live publish workflow visibly instead of being reported as a successful publish run.
 
 ## Scheduling
 

@@ -1,69 +1,79 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import src.x_session_health as health
 
 
-class _FakeComposer:
-    valid = True
-    saved = False
-    closed = False
-
-    def __init__(self, *args, **kwargs):
-        type(self).saved = False
-        type(self).closed = False
-
-    def _session_is_valid(self):
-        return type(self).valid
-
-    def _save_session(self):
-        type(self).saved = True
-
-    def close(self):
-        type(self).closed = True
-
-
 class XSessionHealthTests(unittest.TestCase):
-    def setUp(self):
-        self.old_session = health.SESSION
-        _FakeComposer.valid = True
-        _FakeComposer.saved = False
-        _FakeComposer.closed = False
+    def _write_session(self, path, *, expires=4102444800, include_auth=True):
+        cookies = [
+            {
+                "name": "ct0",
+                "value": "test-csrf",
+                "domain": ".x.com",
+                "path": "/",
+                "expires": expires,
+            }
+        ]
+        if include_auth:
+            cookies.append(
+                {
+                    "name": "auth_token",
+                    "value": "test-auth",
+                    "domain": ".x.com",
+                    "path": "/",
+                    "expires": expires,
+                }
+            )
+        path.write_text(json.dumps({"cookies": cookies, "origins": []}), encoding="utf-8")
 
-    def tearDown(self):
-        health.SESSION = self.old_session
-
-    def test_missing_session_fails_before_browser_launch(self):
+    def test_missing_session_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            health.SESSION = Path(tmp) / "missing.json"
-            with patch("src.x_session_health._WebComposer") as composer:
-                with self.assertRaises(SystemExit) as caught:
-                    health.main()
-            self.assertIn("X SESSION EXPIRED", str(caught.exception))
-            composer.assert_not_called()
+            path = Path(tmp) / "missing.json"
+            with self.assertRaises(health.XSessionHealthError) as caught:
+                health.validate_saved_session(path, now=1000)
+            self.assertIn("saved session is missing", str(caught.exception))
 
-    def test_valid_session_is_refreshed_and_closed(self):
+    def test_valid_auth_cookie_passes_without_browser(self):
         with tempfile.TemporaryDirectory() as tmp:
-            health.SESSION = Path(tmp) / "session.json"
-            health.SESSION.write_text("{}", encoding="utf-8")
-            with patch("src.x_session_health._WebComposer", _FakeComposer):
-                health.main()
-            self.assertTrue(_FakeComposer.saved)
-            self.assertTrue(_FakeComposer.closed)
+            path = Path(tmp) / "session.json"
+            self._write_session(path, expires=2000)
+            result = health.validate_saved_session(path, now=1000)
+            self.assertEqual(result["cookie_count"], 2)
+            self.assertEqual(result["auth_cookie_expires"], 2000.0)
 
-    def test_invalid_session_fails_and_closes_browser(self):
+    def test_session_cookie_without_fixed_expiry_is_allowed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            health.SESSION = Path(tmp) / "session.json"
-            health.SESSION.write_text("{}", encoding="utf-8")
-            _FakeComposer.valid = False
-            with patch("src.x_session_health._WebComposer", _FakeComposer):
-                with self.assertRaises(SystemExit) as caught:
-                    health.main()
-            self.assertIn("X SESSION EXPIRED", str(caught.exception))
-            self.assertFalse(_FakeComposer.saved)
-            self.assertTrue(_FakeComposer.closed)
+            path = Path(tmp) / "session.json"
+            self._write_session(path, expires=-1)
+            result = health.validate_saved_session(path, now=1000)
+            self.assertEqual(result["auth_cookie_expires"], -1.0)
+
+    def test_expired_auth_cookie_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            self._write_session(path, expires=999)
+            with self.assertRaises(health.XSessionHealthError) as caught:
+                health.validate_saved_session(path, now=1000)
+            self.assertIn("past its expiry time", str(caught.exception))
+
+    def test_missing_auth_cookie_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            self._write_session(path, include_auth=False)
+            with self.assertRaises(health.XSessionHealthError) as caught:
+                health.validate_saved_session(path, now=1000)
+            self.assertIn("auth_token cookie is missing", str(caught.exception))
+
+    def test_malformed_json_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text("not-json", encoding="utf-8")
+            with self.assertRaises(health.XSessionHealthError) as caught:
+                health.validate_saved_session(path, now=1000)
+            self.assertIn("malformed saved session", str(caught.exception))
 
 
 if __name__ == "__main__":

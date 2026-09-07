@@ -130,10 +130,8 @@ jobs:
           echo "source=bootstrap" >> "$GITHUB_OUTPUT"
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
-      - name: Validate and refresh X browser session
+      - name: Validate X browser session structure
         if: steps.x_session.outputs.ready == 'true'
-        env:
-          X_BROWSER_CHANNEL: chrome
         run: python -m src.x_session_health
 
       - name: Production controller
@@ -145,6 +143,7 @@ jobs:
         run: python -m src.production_controller
 
       - name: Publish approved-quality posts to X
+        id: publish_x
         if: steps.x_session.outputs.ready == 'true'
         env:
           X_PUBLISH_ENABLED: "true"
@@ -154,6 +153,37 @@ jobs:
           X_HEADLESS: "true"
           X_BROWSER_CHANNEL: chrome
         run: python -m src.production_run
+
+      - name: Surface X publish failure details
+        if: failure() && steps.x_session.outputs.ready == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def escape(value):
+              return str(value).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+          path = Path('data/publish_log.json')
+          if not path.exists():
+              print('::error title=PulseX X publish failed::Publisher failed before publish diagnostics were written.')
+              raise SystemExit(0)
+
+          try:
+              rows = json.loads(path.read_text(encoding='utf-8'))
+          except Exception as exc:
+              print(f'::error title=PulseX X publish failed::Unable to read publish diagnostics: {escape(exc)}')
+              raise SystemExit(0)
+
+          errors = [row for row in rows if isinstance(row, dict) and row.get('error')]
+          if not errors:
+              print('::error title=PulseX X publish failed::Publisher exited unsuccessfully without an X error in publish_log.json.')
+          else:
+              for row in errors[:3]:
+                  message = f"{row.get('title', 'Untitled story')}: {row.get('error')}"
+                  print(f'::error title=PulseX X publish failed::{escape(message)}')
+          PY
 
       - name: Preserve refreshed X browser session
         if: steps.x_session.outputs.ready == 'true' && success()
