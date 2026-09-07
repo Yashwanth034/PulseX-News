@@ -1,0 +1,33 @@
+name: Temporary PR3 merge helper
+
+on:
+  push:
+    branches:
+      - security-and-x-diagnostics
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for cleanup commit
+        run: sleep 45
+
+      - name: Merge existing PR 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge 3 --repo "$GITHUB_REPOSITORY" --merge --delete-branch
+
+      - name: Trigger deployed PulseX workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 5
+          gh workflow run news.yml --repo "$GITHUB_REPOSITORY" --ref main
