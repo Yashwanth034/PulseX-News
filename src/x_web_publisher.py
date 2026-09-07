@@ -149,16 +149,17 @@ class _WebComposer:
 
     def _session_is_valid(self):
         try:
-            self.page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
+            # Validate the exact capability PulseX needs instead of inferring
+            # authentication from X's frequently changing home/sidebar DOM.
+            # A valid session must be able to open the real compose surface.
+            self.page.goto(COMPOSE_URL, wait_until="domcontentloaded", timeout=30000)
 
-            # GitHub-hosted runners can render X more slowly than a local
-            # browser. Give the authenticated shell time to hydrate before
-            # deciding that a perfectly good storage state is invalid.
-            logged_in = False
-            for _ in range(15):
-                if self._is_logged_in_page():
-                    logged_in = True
+            composer_ready = False
+            for _ in range(20):
+                if self.page.locator(COMPOSER_TEXTAREA).count() > 0:
+                    composer_ready = True
                     break
+
                 current = self.page.url
                 if (
                     "x.com/login" in current
@@ -170,14 +171,14 @@ class _WebComposer:
 
             parsed = urlsplit(self.page.url)
             safe_path = parsed.path or "/"
-            marker_count = self.page.locator(LOGGED_IN_MARKER).count()
+            composer_count = self.page.locator(COMPOSER_TEXTAREA).count()
             username_count = self.page.locator(USERNAME_SELECTOR).count() + self.page.locator(USERNAME_SELECTOR_FALLBACK).count()
             challenge_count = self.page.locator(CHALLENGE_INPUT).count()
             self.session_diagnostic = (
-                f"path={safe_path}; logged_in_marker={marker_count}; "
+                f"path={safe_path}; composer={composer_count}; "
                 f"username_field={username_count}; challenge_field={challenge_count}"
             )
-            return logged_in
+            return composer_ready
         except Exception as exc:
             self.session_diagnostic = f"browser_check_error={type(exc).__name__}"
             return False

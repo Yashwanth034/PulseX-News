@@ -2,6 +2,7 @@ import unittest
 
 from src.x_web_publisher import (
     CHALLENGE_INPUT,
+    COMPOSER_TEXTAREA,
     LOGGED_IN_MARKER,
     USERNAME_SELECTOR,
     USERNAME_SELECTOR_FALLBACK,
@@ -32,6 +33,8 @@ class _FakePage:
     def locator(self, selector):
         if selector == LOGGED_IN_MARKER:
             return _FakeLocator(lambda: 1 if self.waits >= self.hydrate_after else 0)
+        if selector == COMPOSER_TEXTAREA:
+            return _FakeLocator(lambda: 1 if self.waits >= self.hydrate_after else 0)
         if selector in {USERNAME_SELECTOR, USERNAME_SELECTOR_FALLBACK, CHALLENGE_INPUT}:
             return _FakeLocator(lambda: 0)
         return _FakeLocator(lambda: 0)
@@ -48,14 +51,14 @@ class XWebLoginDetectionTests(unittest.TestCase):
         composer = self._composer(_FakePage(hydrate_after=0))
         self.assertTrue(composer._is_logged_in_page())
 
-    def test_session_validation_waits_for_slow_home_hydration(self):
+    def test_session_validation_waits_for_slow_compose_hydration(self):
         page = _FakePage(hydrate_after=3)
         composer = self._composer(page)
 
         self.assertTrue(composer._session_is_valid())
         self.assertGreaterEqual(page.waits, 3)
-        self.assertIn("path=/home", composer.session_diagnostic)
-        self.assertIn("logged_in_marker=1", composer.session_diagnostic)
+        self.assertIn("path=/compose/post", composer.session_diagnostic)
+        self.assertIn("composer=1", composer.session_diagnostic)
 
     def test_login_flow_is_never_treated_as_authenticated(self):
         page = _FakePage(hydrate_after=0)
