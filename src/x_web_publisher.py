@@ -104,12 +104,6 @@ class _WebComposer:
     # LOGIN
     # -------------------------------------------------
 
-    def _is_logged_in(self):
-        return (
-            "x.com/login" not in self.page.url
-            and self.page.locator(POST_BUTTON).count() == 0
-        )
-
     def ensure_logged_in(self):
         if self._session_is_valid():
             # X can refresh cookies/storage during ordinary authenticated page loads.
@@ -132,20 +126,6 @@ class _WebComposer:
         self._login()
         self._skip_onboarding()
         self._save_session()
-
-    def _is_logged_in_page(self):
-        if (
-            "x.com/login" in self.page.url
-            or "i/flow" in self.page.url
-            or "onboarding" in self.page.url
-        ):
-            return False
-        return (
-            self.page.locator(
-                LOGGED_IN_MARKER
-            ).count()
-            > 0
-        )
 
     def _session_is_valid(self):
         try:

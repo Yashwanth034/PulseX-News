@@ -46,7 +46,7 @@ def build():
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>World News Bot Dashboard</title>
+<title>PulseX Dashboard</title>
 <style>
 body{{font-family:system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:24px;background:#f5f5f5;color:#171717}}
 header{{background:white;padding:22px;border-radius:16px;margin-bottom:18px}}
@@ -61,7 +61,7 @@ a{{color:inherit}}
 </head>
 <body>
 <header>
-<h1>World News Bot</h1>
+<h1>PulseX</h1>
 <p>Dry-run dashboard — <b>nothing is posted to X from this page.</b></p>
 <div class='grid'>
 <div class='stat'><b>{data.get('count',0)}</b><br>Ready</div>

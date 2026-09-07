@@ -1,4 +1,4 @@
-name: World News Bot — Fast Collector
+name: PulseX — News Pipeline
 
 permissions:
   contents: write
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: world-news-state
+  group: pulsex-state
   cancel-in-progress: false
 
 jobs:
@@ -226,8 +226,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config user.name "world-news-bot"
-          git config user.email "world-news-bot@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch origin state || true
 
@@ -241,8 +241,8 @@ jobs:
           fi
 
           git -C /tmp/news-state remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          git -C /tmp/news-state config user.name "world-news-bot"
-          git -C /tmp/news-state config user.email "world-news-bot@users.noreply.github.com"
+          git -C /tmp/news-state config user.name "github-actions[bot]"
+          git -C /tmp/news-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           mkdir -p /tmp/news-state/data
           state_files=()
