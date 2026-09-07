@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout application
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -35,7 +35,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload news output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: news-output
           path: |
