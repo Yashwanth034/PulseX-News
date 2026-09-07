@@ -84,7 +84,7 @@ Publisher images and MP4 video are discovered from RSS and Open Graph metadata.
 - Posting is capped at 1 per rolling 30 minutes, 2 per rolling hour, and 48 per UTC day by default.
 - Optional human review is supported.
 - Production state is persisted separately from application source.
-- Plain X browser-session JSON is never committed. GitHub Actions validates its structure/expiry locally, the live publisher confirms the session against X when a post is attempted and preserves refreshed cookies, then AES-256-GCM encrypts the session and stores only ciphertext on the `state` branch.
+- Plain X browser-session JSON is never committed. GitHub Actions validates its structure/expiry locally; the live publisher then verifies authentication by opening X's compose surface, preserves refreshed cookies after a successful publish, encrypts the refreshed session with AES-256-GCM, and stores only ciphertext on the `state` branch.
 - An expired/revoked X session fails the live publish workflow visibly instead of being reported as a successful publish run.
 
 ## Scheduling
@@ -134,6 +134,7 @@ python3 -m venv .venv
 .venv/bin/python -m src.test_publish_limits
 .venv/bin/python -m src.test_session_crypto
 .venv/bin/python -m src.test_x_session_health
+.venv/bin/python -m src.test_x_web_login_detection
 .venv/bin/python -m src.test_production_run
 ```
 
@@ -155,7 +156,6 @@ Publishing is configured via environment variables:
 | `X_DAILY_POST_LIMIT` | `48` | Max posts per UTC day |
 | `X_HALF_HOUR_POST_LIMIT` | `1` | Max posts per rolling 30 min |
 | `X_HOURLY_POST_LIMIT` | `2` | Max posts per rolling 1 hour |
-| `X_CDP_URL` | `http://localhost:9222` | Optional local CDP browser endpoint |
 
 ## Project structure
 
@@ -175,19 +175,19 @@ src/
   media.py                      Safe image/video discovery and download
   production_controller.py      Production safety gate
   production_run.py             Production publish entry point
-  x_session_health.py           Validates and refreshes the saved X session
+  x_session_health.py           Validates saved-session structure and expiry
   session_crypto.py             Encrypts/decrypts rolling X session state
-  x_web_publisher.py            Saved-session browser publisher
+  x_web_publisher.py            Saved-session browser publisher and live compose validation
   x_publisher.py                X publishing backend
   health_gate.py                Runtime health checks
   metrics.py                    Operational metrics
   status.py                     Current run status
 
-data/
-  news.db                       Story and event memory
-  queue.json                    Current selected stories
-  production_state.json         Publishing state
-  source_health.json            Source health snapshot
+scripts/
+  capture_x_session.py          Manual browser-session capture
+  renew_x_session.sh            Guided X-session recovery helper
+
+data/                           Runtime-only generated state/output; durable production state is kept on the `state` branch
 ```
 
 PulseX is built to publish fewer, better stories: important events across sectors, strong disaster coverage, clean wording, and aggressive duplicate suppression.
