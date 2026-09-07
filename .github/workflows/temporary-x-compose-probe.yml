@@ -1,0 +1,61 @@
+name: Temporary X compose session probe
+
+on:
+  push:
+    branches:
+      - probe-x-compose-session
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify runner Chrome
+        run: google-chrome --version
+
+      - name: Restore X browser session
+        env:
+          X_WEB_SESSION: ${{ secrets.X_WEB_SESSION }}
+        run: |
+          set -euo pipefail
+          test -n "$X_WEB_SESSION"
+          mkdir -p data
+          printf '%s' "$X_WEB_SESSION" > data/web_session.json
+          test -s data/web_session.json
+
+      - name: Probe compose authentication without posting
+        env:
+          X_BROWSER_CHANNEL: chrome
+          X_HEADLESS: "true"
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from src.x_web_publisher import _WebComposer
+
+          composer = _WebComposer("", "", Path("data/web_session.json"), headless=True)
+          try:
+              valid = composer._session_is_valid()
+              print(composer.session_diagnostic)
+              if not valid:
+                  raise SystemExit("X compose surface did not authenticate")
+          finally:
+              composer.close()
+          PY
+
+      - name: Remove restored session
+        if: always()
+        run: rm -f data/web_session.json
