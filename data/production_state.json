@@ -1,9 +1,9 @@
 {
-  "live_enabled": false,
+  "live_enabled": true,
   "kill_switch": false,
-  "daily_post_count": 9,
+  "daily_post_count": 10,
   "last_reset_date": "2026-09-24",
   "recent_post_times": [
-    "2026-09-24T08:01:52.413853+00:00"
+    "2026-09-24T09:02:04.294419+00:00"
   ]
 }
