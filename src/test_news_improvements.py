@@ -651,6 +651,7 @@ class WebMediaAttachmentTests(unittest.TestCase):
         composer._open_composer = lambda: events.append("open")
         composer._type_text = lambda text: events.append(("text", text))
         composer._attach_media = lambda path: events.append(("media", path)) or True
+        composer._assert_composer_text = lambda text: events.append(("verify", text))
         composer._click_post = lambda: events.append("post")
         composer._tweet_id_from_toast = lambda: "123"
 
@@ -658,7 +659,13 @@ class WebMediaAttachmentTests(unittest.TestCase):
 
         self.assertEqual(
             events,
-            ["open", ("text", "hello"), ("media", "/tmp/photo.jpg"), "post"],
+            [
+                "open",
+                ("text", "hello"),
+                ("media", "/tmp/photo.jpg"),
+                ("verify", "hello"),
+                "post",
+            ],
         )
         self.assertTrue(result["media_attached"])
         self.assertEqual(result["tweet_id"], "123")
