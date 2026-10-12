@@ -563,6 +563,31 @@ class SourceFilterTests(unittest.TestCase):
 
 
 class WebMediaAttachmentTests(unittest.TestCase):
+    def test_composer_typing_does_not_require_pointer_click(self):
+        composer = object.__new__(_WebComposer)
+        filled = []
+
+        class Textarea:
+            @property
+            def first(self):
+                return self
+
+            def click(self):
+                raise AssertionError("composer typing must not require a pointer click")
+
+            def fill(self, text):
+                filled.append(text)
+
+        class Page:
+            def locator(self, selector):
+                self.selector = selector
+                return Textarea()
+
+        composer.page = Page()
+        composer._type_text("overlay-safe post")
+
+        self.assertEqual(filled, ["overlay-safe post"])
+
     def test_composer_single_attaches_media_before_posting(self):
         composer = object.__new__(_WebComposer)
         events = []

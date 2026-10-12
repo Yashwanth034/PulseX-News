@@ -258,8 +258,11 @@ class _WebComposer:
 
     def _type_text(self, text):
         textarea = self.page.locator(COMPOSER_TEXTAREA).first
-        textarea.click()
-        self.page.keyboard.type(text)
+        # Fill the contenteditable directly instead of relying on a pointer
+        # click. X sometimes leaves a transient layer/mask above the composer
+        # in headless CI, which intercepts clicks even though the textarea is
+        # visible and editable.
+        textarea.fill(text)
 
     def _attach_media(self, media_path):
         """Attach one local image/video. Any failure returns False for text fallback."""
