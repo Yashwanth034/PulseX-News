@@ -254,15 +254,43 @@ class _WebComposer:
 
     def _open_composer(self):
         self.page.goto(COMPOSE_URL, wait_until="domcontentloaded", timeout=60000)
-        self.page.wait_for_selector(COMPOSER_TEXTAREA, timeout=30000)
+
+        # X renders /compose/post as a modal inside #layers over the timeline.
+        # Waiting on the generic selector can return the background timeline
+        # composer before the modal is ready, so prefer the layered composer.
+        try:
+            self.page.wait_for_selector(
+                f"#layers {COMPOSER_TEXTAREA}",
+                timeout=15000,
+            )
+        except Exception:
+            self.page.wait_for_selector(COMPOSER_TEXTAREA, timeout=15000)
+
+    def _active_compose_locator(self, selector):
+        """Return a compose control from X's active modal before any background copy."""
+        layers = self.page.locator("#layers")
+        if layers.count() > 0:
+            layered = layers.first.locator(selector)
+            if layered.count() > 0:
+                return layered.first
+
+        return self.page.locator(selector).first
 
     def _type_text(self, text):
-        textarea = self.page.locator(COMPOSER_TEXTAREA).first
-        # Fill the contenteditable directly instead of relying on a pointer
-        # click. X sometimes leaves a transient layer/mask above the composer
-        # in headless CI, which intercepts clicks even though the textarea is
-        # visible and editable.
-        textarea.fill(text)
+        textarea = self._active_compose_locator(COMPOSER_TEXTAREA)
+
+        # Focus programmatically so X's modal mask cannot intercept a pointer
+        # click, then send real keyboard/input events so React/Draft state is
+        # updated instead of only mutating the contenteditable DOM.
+        textarea.focus()
+        textarea.press_sequentially(text, delay=1)
+
+        expected = text.replace("\r\n", "\n").strip()
+        actual = textarea.inner_text(timeout=5000).replace("\r\n", "\n").strip()
+        if actual != expected:
+            raise XPublisherError(
+                "X composer did not retain the news text; refusing to publish media-only post"
+            )
 
     def _attach_media(self, media_path):
         """Attach one local image/video. Any failure returns False for text fallback."""
@@ -271,7 +299,7 @@ class _WebComposer:
 
         file_input = None
         try:
-            file_input = self.page.locator(MEDIA_FILE_INPUT).first
+            file_input = self._active_compose_locator(MEDIA_FILE_INPUT)
             if file_input.count() == 0:
                 return False
 
@@ -299,9 +327,9 @@ class _WebComposer:
             return False
 
     def _click_post(self):
-        button = self.page.locator(POST_BUTTON)
+        button = self._active_compose_locator(POST_BUTTON)
         if button.count() == 0:
-            button = self.page.locator(POST_BUTTON_FALLBACK)
+            button = self._active_compose_locator(POST_BUTTON_FALLBACK)
         button.click()
         self.page.wait_for_selector(TOAST, timeout=30000)
 

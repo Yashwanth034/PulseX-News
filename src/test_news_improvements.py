@@ -18,6 +18,7 @@ from src.priority import _term_present as priority_term_present, priority
 from src.quality import has_rss_junk, quality_check
 from src.selection import select_balanced_queue
 from src.x_web_publisher import _WebComposer, XWebPublisher
+from src.x_publisher import XPublisherError
 import src.main as news_main
 
 
@@ -563,30 +564,86 @@ class SourceFilterTests(unittest.TestCase):
 
 
 class WebMediaAttachmentTests(unittest.TestCase):
-    def test_composer_typing_does_not_require_pointer_click(self):
+    def test_active_composer_prefers_layered_modal_over_background(self):
         composer = object.__new__(_WebComposer)
-        filled = []
+        modal_target = object()
+        background_target = object()
 
-        class Textarea:
+        class ModalCollection:
+            def count(self):
+                return 1
+
+            @property
+            def first(self):
+                return modal_target
+
+        class Layer:
             @property
             def first(self):
                 return self
 
-            def click(self):
-                raise AssertionError("composer typing must not require a pointer click")
+            def locator(self, selector):
+                return ModalCollection()
 
-            def fill(self, text):
-                filled.append(text)
+        class LayerCollection:
+            def count(self):
+                return 1
+
+            @property
+            def first(self):
+                return Layer()
+
+        class BackgroundCollection:
+            @property
+            def first(self):
+                return background_target
 
         class Page:
             def locator(self, selector):
-                self.selector = selector
-                return Textarea()
+                if selector == "#layers":
+                    return LayerCollection()
+                return BackgroundCollection()
 
         composer.page = Page()
+
+        self.assertIs(composer._active_compose_locator("[data-testid='target']"), modal_target)
+
+    def test_composer_typing_uses_keyboard_events_and_verifies_text(self):
+        composer = object.__new__(_WebComposer)
+        events = []
+
+        class Textarea:
+            def focus(self):
+                events.append("focus")
+
+            def press_sequentially(self, text, delay=0):
+                events.append(("type", text, delay))
+
+            def inner_text(self, timeout=None):
+                return "overlay-safe post"
+
+        composer._active_compose_locator = lambda selector: Textarea()
         composer._type_text("overlay-safe post")
 
-        self.assertEqual(filled, ["overlay-safe post"])
+        self.assertEqual(events, ["focus", ("type", "overlay-safe post", 1)])
+
+    def test_composer_typing_rejects_text_that_was_not_committed(self):
+        composer = object.__new__(_WebComposer)
+
+        class Textarea:
+            def focus(self):
+                pass
+
+            def press_sequentially(self, text, delay=0):
+                pass
+
+            def inner_text(self, timeout=None):
+                return ""
+
+        composer._active_compose_locator = lambda selector: Textarea()
+
+        with self.assertRaises(XPublisherError):
+            composer._type_text("news text must be present")
 
     def test_composer_single_attaches_media_before_posting(self):
         composer = object.__new__(_WebComposer)
