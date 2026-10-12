@@ -276,6 +276,15 @@ class _WebComposer:
 
         return self.page.locator(selector).first
 
+    def _assert_composer_text(self, text):
+        textarea = self._active_compose_locator(COMPOSER_TEXTAREA)
+        expected = text.replace("\r\n", "\n").strip()
+        actual = textarea.inner_text(timeout=5000).replace("\r\n", "\n").strip()
+        if actual != expected:
+            raise XPublisherError(
+                "X composer did not retain the news text; refusing to publish media-only post"
+            )
+
     def _type_text(self, text):
         textarea = self._active_compose_locator(COMPOSER_TEXTAREA)
 
@@ -284,13 +293,7 @@ class _WebComposer:
         # updated instead of only mutating the contenteditable DOM.
         textarea.focus()
         textarea.press_sequentially(text, delay=1)
-
-        expected = text.replace("\r\n", "\n").strip()
-        actual = textarea.inner_text(timeout=5000).replace("\r\n", "\n").strip()
-        if actual != expected:
-            raise XPublisherError(
-                "X composer did not retain the news text; refusing to publish media-only post"
-            )
+        self._assert_composer_text(text)
 
     def _attach_media(self, media_path):
         """Attach one local image/video. Any failure returns False for text fallback."""
@@ -345,6 +348,10 @@ class _WebComposer:
         self._open_composer()
         self._type_text(text)
         media_attached = self._attach_media(media_path)
+        # Media upload can rerender X's composer. Verify the exact news text
+        # is still present immediately before clicking Post so a media-only
+        # tweet can never be silently published.
+        self._assert_composer_text(text)
         self._click_post()
         tweet_id = self._tweet_id_from_toast()
         return {
